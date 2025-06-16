@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # Application Settings
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000", "http://localhost:5173"]
     
     # Webhook Configuration
     WEBHOOK_URL: str = ""

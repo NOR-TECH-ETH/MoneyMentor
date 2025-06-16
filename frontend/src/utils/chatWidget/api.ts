@@ -11,7 +11,7 @@ export const sendChatMessage = async (
   config: ApiConfig,
   message: string
 ): Promise<ChatResponse> => {
-  const response = await fetch(`${config.apiUrl}/api/chat`, {
+  const response = await fetch(`${config.apiUrl}/api/chat/message`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
