@@ -2168,4 +2168,31 @@
 
 .chat-widget.dark .disclaimer-text {
   color: #fbbf24;
+}
+
+/* Message Buttons */
+.message-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.message-button {
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.message-button:hover {
+  background: #5a67d8;
+}
+
+.message-button:active {
+  background: #4c51bf;
 } 

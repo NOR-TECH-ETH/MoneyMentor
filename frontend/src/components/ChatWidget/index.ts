@@ -6,4 +6,5 @@ export { CourseQuiz } from './CourseQuiz';
 export { UploadProgressIndicator } from './UploadProgressIndicator';
 export { UploadedFilesDisplay } from './UploadedFilesDisplay';
 export { ChatInput } from './ChatInput';
-export { CalculationResult } from './CalculationResult'; 
+export { CalculationResult } from './CalculationResult';
+export { MessageButtons } from './MessageButtons'; 

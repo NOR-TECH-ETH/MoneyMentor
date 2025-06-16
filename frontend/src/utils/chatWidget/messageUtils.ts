@@ -23,13 +23,34 @@ export const createMessage = (
  */
 export const createWelcomeMessage = (
   sessionId: string,
-  userId: string
-): ChatMessage => createMessage(
-  "👋 Welcome to MoneyMentor! I'm here to help you with financial literacy.\n\n🎯 **Quick Start Options:**\n• Type `/courses` to see available learning courses\n• Type `/diagnostic_test` for personalized course recommendations\n• Type `/chat` for regular financial Q&A\n• Just ask me any financial question to get started!\n\nWhat would you like to explore first?",
-  'assistant',
-  sessionId,
-  userId
-);
+  userId: string,
+  onDiagnosticTest: () => void,
+  onCourses: () => void,
+  onChat: () => void
+): ChatMessage => ({
+  ...createMessage(
+    "👋 Welcome to MoneyMentor! I'm here to help you with financial literacy.\n\n🎯 **Quick Start Options:**\n• Press `Courses` button to see available learning courses\n• Press `Diagnostic test` button for personalized course recommendations\n• Press `Chat` button for regular financial Q&A\n• Just ask me any financial question to get started!\n\nWhat would you like to explore first?",
+    'assistant',
+    sessionId,
+    userId
+  ),
+  metadata: {
+    buttons: [
+      {
+        label: "Courses",
+        action: onCourses
+      },
+      {
+        label: "Diagnostic Test",
+        action: onDiagnosticTest
+      },
+      {
+        label: "Chat",
+        action: onChat
+      }
+    ]
+  }
+});
 
 /**
  * Create system message

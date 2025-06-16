@@ -18,11 +18,15 @@ export interface QuizFeedback {
 export interface ChatMessage {
   id: string;
   content: string;
-  type: 'user' | 'assistant' | 'system' | 'quiz' | 'calculation' | 'course' | 'course-list';
+  type: 'user' | 'assistant' | 'system' | 'quiz' | 'calculation' | 'course' | 'course-list' | 'welcome';
   timestamp: string;
   sessionId: string;
   userId: string;
   metadata?: {
+    buttons?: {
+      label: string;
+      action: () => void;
+    }[];
     quizQuestion?: QuizQuestion;
     calculationResult?: CalculationResult;
     requiresDisclaimer?: boolean;

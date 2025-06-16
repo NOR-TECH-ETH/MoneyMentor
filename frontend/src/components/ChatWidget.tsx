@@ -19,7 +19,8 @@ import {
   UploadProgressIndicator,
   UploadedFilesDisplay,
   ChatInput,
-  CalculationResult
+  CalculationResult,
+  MessageButtons,
 } from './ChatWidget/index';
 
 // Import utilities
@@ -45,17 +46,7 @@ import {
   
   // Diagnostic utilities
   DiagnosticState,
-  DiagnosticResult,
   initializeDiagnosticState,
-  setupDiagnosticTest,
-  handleDiagnosticAnswer,
-  goToNextQuestion,
-  goToPreviousQuestion,
-  isDiagnosticComplete,
-  calculateDiagnosticResults,
-  createDiagnosticIntroMessage,
-  createDiagnosticCompletionMessage,
-  resetDiagnosticState,
   
   // Quiz utilities
   QuizFeedback,
@@ -139,10 +130,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   
   // Available commands
   const availableCommands = [
-    { command: '/diagnostic_test', description: 'Take a quick financial knowledge assessment' },
-    { command: '/courses', description: 'View available learning courses' },
-    { command: '/chat', description: 'Start regular financial Q&A chat' },
-    { command: '/help', description: 'Show help and available commands' }
+    { command: 'diagnostic_test', description: 'Take a quick financial knowledge assessment' },
+    { command: 'courses', description: 'View available learning courses' },
+    { command: 'chat', description: 'Start regular financial Q&A chat' },
+    { command: 'help', description: 'Show help and available commands' }
   ];
   
   // Course State
@@ -209,13 +200,25 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       setQuizSession(session);
       
       if (messages.length === 0) {
-        const welcomeMessage = createWelcomeMessage(sessionIds.sessionId, sessionIds.userId);
+        const welcomeMessage = createWelcomeMessage(
+          sessionIds.sessionId,
+          sessionIds.userId,
+          () => handleCommandSelect('diagnostic_test'),
+          () => handleCommandSelect('courses'),
+          () => handleCommandSelect('chat')
+        );
         setMessages([welcomeMessage]);
       }
     } catch (error) {
       console.error('Session initialization error:', error);
       if (messages.length === 0) {
-        const welcomeMessage = createWelcomeMessage(sessionIds.sessionId, sessionIds.userId);
+        const welcomeMessage = createWelcomeMessage(
+          sessionIds.sessionId,
+          sessionIds.userId,
+          () => handleCommandSelect('diagnostic_test'),
+          () => handleCommandSelect('courses'),
+          () => handleCommandSelect('chat')
+        );
         setMessages([welcomeMessage]);
       }
     }
@@ -244,30 +247,26 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setDiagnosticTotalQuestions(0);
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return;
+  const handleSendMessage = async (commandText?: string) => {
+    const messageText = commandText || inputValue.trim();
+    if (!messageText) return;
 
-    const userMessage = createUserMessage(inputValue, sessionIds.sessionId, sessionIds.userId);
-    addMessage(userMessage);
-    
-    const messageText = inputValue;
-    setInputValue('');
     setIsLoading(true);
-    
-    // Hide command suggestions when sending
+    setInputValue('');
     setShowCommandSuggestions(false);
     setCommandSuggestions([]);
+    setShowCommandMenu(false);
 
     try {
       // Handle special commands
-      if (messageText.trim() === '/diagnostic_test') {
+      if (messageText.trim() === 'diagnostic_test') {
         closeCurrentDisplays(); // Close any current displays
         setIsLoading(false);
         await handleStartDiagnosticTest();
         return;
       }
 
-      if (messageText.trim() === '/courses') {
+      if (messageText.trim() === 'courses') {
         closeCurrentDisplays(); // Close any current displays
         setIsLoading(false);
         setShowCourseList(true);
@@ -280,7 +279,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         return;
       }
 
-      if (messageText.trim() === '/help') {
+      if (messageText.trim() === 'help') {
         closeCurrentDisplays(); // Close any current displays
         setIsLoading(false);
         const helpMessage = createSystemMessage(
@@ -294,7 +293,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         return;
       }
 
-      if (messageText.trim() === '/chat') {
+      if (messageText.trim() === 'chat') {
         closeCurrentDisplays(); // Close any current displays
         setIsLoading(false);
         const chatMessage = createSystemMessage(
@@ -390,6 +389,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setShowCommandSuggestions(false);
     setCommandSuggestions([]);
     setShowCommandMenu(false);
+    // Send the command directly instead of waiting for input value update
+    handleSendMessage(command);
   };
 
   // Quiz handling
@@ -781,6 +782,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
               <div className="message-content">
                 {formatMessageContent(message.content)}
               </div>
+              {/* Display buttons if present */}
+              {message.metadata?.buttons && (
+                <MessageButtons buttons={message.metadata.buttons} />
+              )}
               {/* Display calculation result if present */}
               {message.metadata?.calculationResult && (
                 <CalculationResult result={message.metadata.calculationResult} />
