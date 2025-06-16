@@ -82,7 +82,7 @@ import {
   initializeUploadProgress,
   updateUploadProgress,
   resetUploadProgress,
-  formatFileSize
+  formatFileSize,
 } from '../utils/chatWidget';
 
 interface ChatWidgetProps {
@@ -196,8 +196,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   // Session initialization
   const handleInitializeSession = async () => {
     try {
-      const session = await initializeQuizSession(apiConfig);
-      setQuizSession(session);
+      // Initialize quiz session only
+      await initializeQuizSession(apiConfig);
       
       if (messages.length === 0) {
         const welcomeMessage = createWelcomeMessage(
@@ -304,44 +304,30 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         addMessage(chatMessage);
         return;
       }
+       // Add user message to chat
+       const userMessage = createUserMessage(
+        messageText,
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      addMessage(userMessage);
 
       const response = await sendChatMessage(apiConfig, messageText);
       
-      if (response.success && response.data) {
+     
+      
+      // Handle backend response
+      if (response.message) {
         const assistantMessage = createAssistantMessage(
-          response.data.responseText, 
-          sessionIds.sessionId, 
+          response.message,
+          sessionIds.sessionId,
           sessionIds.userId
         );
         addMessage(assistantMessage);
         
-        // Handle response data
-        if (response.data.quizQuestion) {
-          setCurrentQuiz(response.data.quizQuestion);
-        }
-        
-        if (response.data.calculationResult) {
-          // Add calculation result to the message metadata for display
-          assistantMessage.metadata = {
-            ...assistantMessage.metadata,
-            calculationResult: response.data.calculationResult
-          };
-        }
-        
-        if (response.data.coursePage) {
-          setCurrentCoursePage(response.data.coursePage);
-          setShowCourseList(false);
-        }
-        
-        if (response.data.courseList) {
-          setAvailableCourses(response.data.courseList);
-          setShowCourseList(true);
-          setCurrentCoursePage(null);
-        }
-        
-        if (response.data.courseQuiz) {
-          setCourseQuiz(response.data.courseQuiz);
-          setCourseQuizAnswers(initializeCourseQuizAnswers(response.data.courseQuiz.questions.length));
+        // Handle quiz if present
+        if (response.quiz) {
+          setCurrentQuiz(response.quiz);
         }
       } else {
         const errorMessage = createSystemMessage(

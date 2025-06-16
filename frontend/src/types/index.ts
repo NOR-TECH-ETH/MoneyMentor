@@ -42,24 +42,9 @@ export interface ChatMessage {
 }
 
 export interface ChatResponse {
-  success: boolean;
-  data: {
-    responseText: string;
-    quizQuestion?: QuizQuestion;
-    calculationResult?: CalculationResult;
-    requiresDisclaimer?: boolean;
-    coursePage?: CoursePage;
-    courseList?: Course[];
-    courseQuiz?: {
-      questions: QuizQuestion[];
-      currentQuestion: number;
-      score: number;
-      attempts: number;
-    };
-    sessionId: string;
-    messageId: string;
-    needsDiagnosticTest?: boolean;
-  };
+  message: string;
+  session_id: string;
+  quiz: QuizQuestion | null;
 }
 
 export interface DiagnosticTest {

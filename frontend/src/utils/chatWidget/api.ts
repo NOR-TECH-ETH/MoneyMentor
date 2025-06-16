@@ -17,9 +17,8 @@ export const sendChatMessage = async (
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      userId: config.userId,
-      sessionId: config.sessionId,
-      message
+      query: message,
+      session_id: config.sessionId
     })
   });
 

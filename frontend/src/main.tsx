@@ -10,7 +10,7 @@ function DemoApp() {
 
   React.useEffect(() => {
     // Check backend status
-    fetch('http://localhost:3000/health')
+    fetch('http://localhost:8000/health')
       .then(() => setBackendStatus('✅ Connected'))
       .catch(() => setBackendStatus('❌ Not Connected'));
 
@@ -38,7 +38,7 @@ function DemoApp() {
 
   return (
     <ChatWidget
-      apiUrl="http://localhost:3000"
+      apiUrl="http://localhost:8000"
       position="bottom-right"
       theme="light"
     />
@@ -65,7 +65,7 @@ export function initMoneyMentorWidget(config?: {
   containerId?: string;
 }) {
   const {
-    apiUrl = 'http://localhost:3000',
+    apiUrl = 'http://localhost:8000',
     position = 'bottom-right',
     theme = 'light',
     containerId = 'money-mentor-widget'
