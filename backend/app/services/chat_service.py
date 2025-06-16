@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 import uuid
 from fastapi import HTTPException
+import json
 
 from app.agents.crew import money_mentor_crew
 from app.utils.session import get_session, create_session, add_chat_message, add_quiz_response, update_progress
@@ -41,6 +42,7 @@ class ChatService:
             
             # Get chat history for context
             chat_history = session.get("chat_history", [])
+            # print(f"Chat history: {json.dumps(chat_history, indent=2)}")
             if not isinstance(chat_history, list):
                 chat_history = []
             

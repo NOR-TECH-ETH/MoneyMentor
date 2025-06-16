@@ -13,6 +13,7 @@ from app.agents.tools import (
     SessionManagerTool,
     ProgressTrackerTool
 )
+from app.services.content_service import ContentService
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,25 @@ class MoneyMentorCrew:
     async def process_message(self, message: str, chat_history: List[Dict[str, str]], session_id: str, context: str = "") -> Dict[str, Any]:
         """Process a user message and generate a response"""
         try:
+            # Initialize content service to get relevant context
+            content_service = ContentService()
+            
+            # Get relevant context from knowledge base based on the message
+            try:
+                content_results = await content_service.search_content(message)
+                if content_results and isinstance(content_results, list):
+                    # Format the content results into a readable context
+                    context = "\n".join([
+                        f"- {item.get('title', 'Untitled')}: {item.get('content', '')}"
+                        for item in content_results[:3]  # Limit to top 3 most relevant results
+                    ])
+                    logger.info(f"Retrieved context from knowledge base: {context[:100]}...")
+                else:
+                    logger.info("No relevant context found in knowledge base")
+            except Exception as e:
+                logger.error(f"Failed to retrieve context from knowledge base: {e}")
+                context = ""  # Reset to empty if retrieval fails
+            
             # Create a chat crew for this message
             chat_crew = Crew(
                 agents=[self.financial_tutor_agent],
@@ -86,7 +106,10 @@ class MoneyMentorCrew:
                         {self._format_chat_history(chat_history)}
                         
                         If the message is a casual greeting (like 'hi', 'hello', 'hey'), respond with a friendly greeting.
-                        For financial questions, provide clear, educational responses that help the user understand financial concepts.
+                        For financial questions, use the ContentRetrievalTool with both query and limit parameters:
+                        - query: the search term from the user's question
+                        - limit: 5 (default number of results)
+                        
                         If the context is relevant, incorporate it naturally into your response.
                         
                         Keep your responses natural and conversational while maintaining professionalism.

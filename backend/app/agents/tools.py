@@ -10,7 +10,23 @@ from app.services.calculation_service import CalculationService
 from app.services.content_service import ContentService
 from app.core.database import get_supabase
 
+# Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create console handler with a higher log level
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# Create formatter and add it to the handler
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+
+# Add the handler to the logger
+logger.addHandler(console_handler)
+
+# Prevent the logger from propagating to the root logger
+logger.propagate = False
 
 # Define allowed session keys
 ALLOWED_SESSION_KEYS = {
@@ -129,7 +145,11 @@ class ContentRetrievalTool(BaseTool):
     async def _run(self, query: str, limit: int = 5) -> Dict[str, Any]:
         """Run the content retrieval tool with robust error handling"""
         try:
+            # Log the incoming query
+            logger.info(f"ContentRetrievalTool: Received query - '{query}' with limit {limit}")
+            
             if not query or not isinstance(query, str):
+                logger.warning(f"ContentRetrievalTool: Invalid query received - '{query}'")
                 return {
                     "success": False,
                     "error": "Invalid query parameter",
@@ -140,16 +160,22 @@ class ContentRetrievalTool(BaseTool):
             try:
                 limit = int(limit)
                 if limit < 1:
+                    logger.warning(f"ContentRetrievalTool: Invalid limit {limit}, defaulting to 5")
                     limit = 5
             except (ValueError, TypeError):
+                logger.warning(f"ContentRetrievalTool: Invalid limit type {type(limit)}, defaulting to 5")
                 limit = 5
             
             # Attempt to retrieve content
+            logger.info(f"ContentRetrievalTool: Searching for content with query '{query}'")
             content = await self.content_service.search_content(query)
             
             # Limit results if needed
             if limit and isinstance(content, list):
                 content = content[:limit]
+                logger.info(f"ContentRetrievalTool: Found {len(content)} results, limited to {limit}")
+            else:
+                logger.info(f"ContentRetrievalTool: Found {len(content) if isinstance(content, list) else 0} results")
             
             return {
                 "success": True,
@@ -162,7 +188,7 @@ class ContentRetrievalTool(BaseTool):
             }
             
         except Exception as e:
-            logger.error(f"Content retrieval failed: {str(e)}")
+            logger.error(f"ContentRetrievalTool: Content retrieval failed for query '{query}': {str(e)}")
             return {
                 "success": False,
                 "error": str(e),
