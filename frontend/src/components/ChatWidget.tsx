@@ -197,7 +197,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const handleInitializeSession = async () => {
     try {
       // Initialize quiz session only
-      await initializeQuizSession(apiConfig);
+      // await initializeQuizSession(apiConfig);
       
       if (messages.length === 0) {
         const welcomeMessage = createWelcomeMessage(
@@ -259,14 +259,14 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
     try {
       // Handle special commands
-      if (messageText.trim() === 'diagnostic_test') {
+      if (messageText === 'diagnostic_test') {
         closeCurrentDisplays(); // Close any current displays
         setIsLoading(false);
         await handleStartDiagnosticTest();
         return;
       }
 
-      if (messageText.trim() === 'courses') {
+      if (messageText === 'courses') {
         closeCurrentDisplays(); // Close any current displays
         setIsLoading(false);
         setShowCourseList(true);
@@ -279,7 +279,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         return;
       }
 
-      if (messageText.trim() === 'help') {
+      if (messageText === 'help') {
         closeCurrentDisplays(); // Close any current displays
         setIsLoading(false);
         const helpMessage = createSystemMessage(
@@ -293,7 +293,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         return;
       }
 
-      if (messageText.trim() === 'chat') {
+      if (messageText === 'chat') {
         closeCurrentDisplays(); // Close any current displays
         setIsLoading(false);
         const chatMessage = createSystemMessage(
