@@ -449,10 +449,11 @@ class ContentService:
             return []
     
     async def get_topics(self) -> List[str]:
-        """Get list of topics from content"""
+        """Get list of unique topics from content_chunks table."""
         try:
-            result = self.supabase.table('content_topics').select('topic').execute()
-            return [row['topic'] for row in result.data]
+            result = self.supabase.table('content_chunks').select('metadata').execute()
+            topics = list({row['metadata']['topic'] for row in result.data if 'metadata' in row and 'topic' in row['metadata'] and row['metadata']['topic']})
+            return topics
         except Exception as e:
             logger.error(f"Failed to get topics: {e}")
             return []

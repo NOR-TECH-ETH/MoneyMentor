@@ -69,49 +69,63 @@ class QuizService:
             return True
     
     async def generate_diagnostic_quiz(self) -> List[Dict[str, Any]]:
-        """Generate diagnostic pre-test questions"""
+        """Generate diagnostic pre-test questions using predefined general financial topics"""
         try:
-            # Get all topics
-            topics = await self.content_service.get_topics()
-            
-            # Generate 10 questions covering key areas
-            questions = []
-            for topic in topics[:10]:  # Limit to 10 questions
-                question = await self._generate_question(topic)
-                if question:
-                    questions.append(question)
-            
-            return questions
+            topics = self.diagnostic_topics
+            prompt = (
+                f"Generate 10 multiple-choice questions for a diagnostic quiz. "
+                f"Each question should cover one of these topics: {', '.join(topics)}. "
+                f"Return ONLY a valid JSON array of questions, no explanation, no markdown, no extra text. "
+                f"Each question should have: "
+                f"'question' (text), 'choices' (object with keys 'a', 'b', 'c', 'd' and string values), "
+                f"'correct_answer' (one of 'a', 'b', 'c', 'd'), and 'explanation' (short explanation for the correct answer)."
+            )
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            import json
+            try:
+                questions = json.loads(response.content)
+                processed_questions = []
+                for q in questions:
+                    processed_questions.append({
+                        'question': q.get('question', ''),
+                        'choices': q.get('choices', {}),
+                        'correct_answer': q.get('correct_answer', ''),
+                        'explanation': q.get('explanation', '')
+                    })
+                return processed_questions
+            except Exception as e:
+                logger.error(f"Failed to parse diagnostic quiz JSON: {e}. Raw LLM output: {response.content}")
+                return []
         except Exception as e:
             logger.error(f"Failed to generate diagnostic quiz: {e}")
             return []
     
     async def _generate_question(self, topic: str) -> Optional[Dict[str, Any]]:
-        """Generate a single quiz question"""
+        """Generate a single quiz question for a specific topic using LLM"""
         try:
-            # Get content for topic
-            content = await self.content_service.search_content(topic, k=1)
-            if not content:
+            prompt = (
+                f"Generate a multiple-choice question about {topic}. "
+                f"Return a JSON object with: 'question' (text), 'choices' (object with keys 'a', 'b', 'c', 'd' and string values), "
+                f"'correct_answer' (one of 'a', 'b', 'c', 'd'), and 'explanation' (short explanation for the correct answer). "
+                f"Make the question educational and relevant to personal finance."
+            )
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            import json
+            try:
+                question_data = json.loads(response.content)
+                if 'question' in question_data and 'choices' in question_data and 'correct_answer' in question_data:
+                    return {
+                        'question': question_data['question'],
+                        'choices': question_data['choices'],
+                        'correct_answer': question_data['correct_answer'],
+                        'explanation': question_data.get('explanation', '')
+                    }
+            except Exception as e:
+                logger.error(f"Failed to parse question JSON for topic {topic}: {e}")
                 return None
-            
-            # Generate question using GPT-4
-            # This is a placeholder - implement actual question generation
-            question = {
-                "id": str(random.randint(1000, 9999)),
-                "topic": topic,
-                "question": f"Sample question about {topic}",
-                "options": [
-                    "Option A",
-                    "Option B",
-                    "Option C",
-                    "Option D"
-                ],
-                "correct_option": 0
-            }
-            
-            return question
+            return None
         except Exception as e:
-            logger.error(f"Failed to generate question: {e}")
+            logger.error(f"Failed to generate question for topic {topic}: {e}")
             return None
 
     async def generate_micro_quiz(self, user_id: str, topic: str) -> Dict[str, Any]:
@@ -435,4 +449,39 @@ class QuizService:
             
         except Exception as e:
             logger.error(f"Error extracting topic from message: {e}")
-            return "General Finance" 
+            return "General Finance"
+
+    async def generate_quiz_from_history(self, session_id: str, quiz_type: str, difficulty: str, chat_history: list) -> list:
+        """Generate a single micro-quiz question based on recent chat history, quiz_type, and difficulty."""
+        try:
+            # Use the last 4-5 messages for context
+            recent_history = chat_history[-5:]
+            chat_context = "\n".join([
+                f"{msg['role']}: {msg['content']}" for msg in recent_history if 'role' in msg and 'content' in msg
+            ])
+            prompt = (
+                f"Based on the following recent chat history, generate a single multiple-choice quiz question "
+                f"that is relevant to the user's recent discussion. The difficulty should be {difficulty}. "
+                f"Return a JSON object with: 'question', 'choices' (object with keys 'a', 'b', 'c', 'd'), "
+                f"'correct_answer' (a/b/c/d), and 'explanation'.\n"
+                f"Chat history:\n{chat_context}"
+            )
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            import json
+            try:
+                question = json.loads(response.content)
+                # Ensure the structure is correct
+                if 'question' in question and 'choices' in question and 'correct_answer' in question:
+                    return [{
+                        'question': question.get('question', ''),
+                        'choices': question.get('choices', {}),
+                        'correct_answer': question.get('correct_answer', ''),
+                        'explanation': question.get('explanation', '')
+                    }]
+            except Exception as e:
+                logger.error(f"Failed to parse micro quiz JSON: {e}")
+                return []
+            return []
+        except Exception as e:
+            logger.error(f"Failed to generate quiz from history: {e}")
+            raise 

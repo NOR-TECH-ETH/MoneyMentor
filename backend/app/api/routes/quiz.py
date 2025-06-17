@@ -7,6 +7,7 @@ from app.agents.crew import money_mentor_crew
 from app.services.quiz_service import QuizService
 from app.core.database import get_supabase
 from datetime import datetime
+from app.utils.session import get_session, create_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,23 +16,47 @@ router = APIRouter()
 async def generate_quiz(request: QuizRequest):
     """Generate a quiz using CrewAI quiz master agent"""
     try:
-        # Create quiz crew
-        quiz_crew = money_mentor_crew.create_quiz_crew(
-            topic=request.topic or "general",
-            quiz_type=request.quiz_type.value,
-            user_id=request.user_id
-        )
-        
-        # Execute the crew
-        result = quiz_crew.kickoff()
-        
-        # Parse result (in production, this would be properly structured)
-        return QuizResponse(
-            questions=result,  # This would be parsed from crew result
-            quiz_id=f"quiz_{request.user_id}_{datetime.utcnow().timestamp()}",
-            quiz_type=request.quiz_type
-        )
-        
+        session = await get_session(request.session_id)
+        if not session:
+            # If session does not exist, create it (frontend always provides a valid session_id)
+            session = await create_session(request.session_id)
+        chat_history = session.get("chat_history", [])
+
+        quiz_service = QuizService()
+        quiz_id = f"quiz_{request.session_id}_{datetime.utcnow().timestamp()}"
+
+        if not chat_history:
+            # No chat history: generate diagnostic quiz (10 questions) from knowledge base
+            diagnostic_questions = await quiz_service.generate_diagnostic_quiz()
+            # Convert to required structure (choices, correct_answer as str, etc.)
+            processed_questions = []
+            for q in diagnostic_questions:
+                processed_questions.append({
+                    'question': q.get('question', ''),
+                    'choices': q.get('choices', {}),
+                    'correct_answer': q.get('correct_answer', ''),
+                    'explanation': q.get('explanation', '')
+                })
+            return QuizResponse(
+                questions=processed_questions,
+                quiz_id=quiz_id,
+                quiz_type=request.quiz_type
+            )
+        else:
+            # Chat history exists: generate a single micro-quiz question about the most recent topic
+            # user_messages = "\n".join([msg["content"] for msg in chat_history if msg.get("role") == "user"])
+            questions = await quiz_service.generate_quiz_from_history(
+                session_id=request.session_id,
+                quiz_type=request.quiz_type.value,
+                difficulty=request.difficulty or "medium",
+                chat_history=chat_history
+            )
+            # Only return the first question for micro-quiz
+            return QuizResponse(
+                questions=questions[:1],
+                quiz_id=quiz_id,
+                quiz_type=request.quiz_type
+            )
     except Exception as e:
         logger.error(f"Quiz generation failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate quiz")

@@ -21,17 +21,14 @@ class ChatResponse(BaseModel):
     calculation_result: Optional[Dict[str, Any]] = Field(None, description="Calculation result if applicable")
 
 class QuizQuestion(BaseModel):
-    id: str = Field(..., description="Question ID")
     question: str = Field(..., description="Question text")
-    options: List[str] = Field(..., description="Multiple choice options")
-    correct_answer: int = Field(..., description="Index of correct answer")
-    topic_tag: str = Field(..., description="Topic category")
+    choices: Dict[str, str] = Field(..., description="Multiple choice options with keys a, b, c, d")
+    correct_answer: str = Field(..., description="Correct answer key (a, b, c, or d)")
     explanation: str = Field(..., description="Explanation for the correct answer")
 
 class QuizRequest(BaseModel):
-    user_id: str = Field(..., description="User identifier")
+    session_id: str = Field(..., description="Session identifier")
     quiz_type: QuizType = Field(..., description="Type of quiz")
-    topic: Optional[str] = Field(None, description="Specific topic for micro quiz")
     difficulty: Optional[str] = Field("medium", description="Quiz difficulty level")
 
 class QuizResponse(BaseModel):
@@ -126,22 +123,12 @@ class TopicResponse(BaseModel):
 class ChatMessageRequest(BaseModel):
     """Schema for chat message request"""
     query: str = Field(..., description="The user's query")
-    session_id: Optional[UUID4] = Field(
-        default_factory=uuid.uuid4,
-        description="Unique session identifier (UUID v4). If not provided or empty, a new UUID will be generated."
-    )
-    
-    @field_validator('session_id', mode='before')
-    @classmethod
-    def handle_empty_session_id(cls, v):
-        if v == "" or v is None:
-            return uuid.uuid4()
-        return v
+    session_id: str = Field(..., description="Session identifier (any string, not restricted to UUID v4)")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "query": "What is compound interest?",
-                "session_id": "550e8400-e29b-41d4-a716-446655440000"  # Valid UUID v4
+                "session_id": "123e4567-e89b-12d3-a456-426614174000"
             }
         } 
