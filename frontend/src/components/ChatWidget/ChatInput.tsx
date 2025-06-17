@@ -11,9 +11,10 @@ interface ChatInputProps {
   showCommandSuggestions: boolean;
   commandSuggestions: string[];
   showCommandMenu: boolean;
-  availableCommands: Array<{ command: string; description: string }>;
+  availableCommands: { command: string; description: string; }[];
+  activeMode: string;
   onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSendMessage: () => void;
+  onSendMessage: (message?: string) => void;
   onFileUpload: (files: FileList) => void;
   onCommandSelect: (command: string) => void;
   onToggleCommandMenu: () => void;
@@ -28,6 +29,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   commandSuggestions,
   showCommandMenu,
   availableCommands,
+  activeMode,
   onInputChange,
   onSendMessage,
   onFileUpload,
@@ -43,7 +45,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const commandButtons = availableCommands.map(cmd => ({
     label: cmd.command,
-    action: () => onCommandSelect(cmd.command)
+    action: () => onCommandSelect(cmd.command),
+    isActive: cmd.command === activeMode
   }));
 
   return (
@@ -99,16 +102,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         
         {/* Command Menu as MessageButtons */}
         {showCommandMenu && (
-          <MessageButtons
-            buttons={commandButtons}
-            className="command-menu"
-          />
+          <div className="message-buttons command-menu">
+            {availableCommands.map((cmd, index) => (
+              <button
+                key={index}
+                onClick={() => onCommandSelect(cmd.command)}
+                className={`message-button ${cmd.command === activeMode ? 'active' : ''}`}
+              >
+                {cmd.command}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
       <button
         className="send-btn"
-        onClick={onSendMessage}
+        onClick={() => onSendMessage()}
         disabled={isLoading || !inputValue.trim()}
       >
         <Send size={18} />

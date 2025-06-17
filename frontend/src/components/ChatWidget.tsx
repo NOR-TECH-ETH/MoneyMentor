@@ -102,6 +102,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  const [activeMode, setActiveMode] = useState('chat');
   
   // Session State
   const [sessionIds, setSessionIds] = useState<SessionIds>({ userId: '', sessionId: '' });
@@ -127,7 +128,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   // Command autocomplete state
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [commandSuggestions, setCommandSuggestions] = useState<string[]>([]);
-  const [showCommandMenu, setShowCommandMenu] = useState(false);
+  const [showCommandMenu, setShowCommandMenu] = useState(true);
   
   // Available commands
   const availableCommands = [
@@ -366,6 +367,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   // Handle command selection
   const handleCommandSelect = (command: string) => {
+    console.log('Setting active mode to:', command); // Debug log
+    setActiveMode(command);
     setInputValue(command);
     setShowCommandSuggestions(false);
     setCommandSuggestions([]);
@@ -871,6 +874,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           commandSuggestions={commandSuggestions}
           showCommandMenu={showCommandMenu}
           availableCommands={availableCommands}
+          activeMode={activeMode}
           onInputChange={handleInputChange}
           onSendMessage={handleSendMessage}
           onFileUpload={handleFileUpload}
