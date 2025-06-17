@@ -6,12 +6,12 @@ export interface ApiConfig {
   sessionId: string;
 }
 
-// Chat API calls
+// Chat API calls - Using port 8000
 export const sendChatMessage = async (
   config: ApiConfig,
   message: string
 ): Promise<ChatResponse> => {
-  const response = await fetch(`${config.apiUrl}/api/chat/message`, {
+  const response = await fetch(`http://localhost:8000/api/chat/message`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -29,11 +29,11 @@ export const sendChatMessage = async (
   return response.json();
 };
 
-// Quiz API calls
+// Quiz API calls - Using port 3000
 export const initializeQuizSession = async (
   config: ApiConfig
 ): Promise<QuizSession> => {
-  const response = await fetch(`${config.apiUrl}/api/quiz/session`, {
+  const response = await fetch(`http://localhost:3000/api/quiz/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -53,7 +53,7 @@ export const initializeQuizSession = async (
 export const loadDiagnosticTest = async (
   apiUrl: string
 ): Promise<DiagnosticTest> => {
-  const response = await fetch(`${apiUrl}/api/quiz/diagnostic`);
+  const response = await fetch(`http://localhost:3000/api/quiz/diagnostic`);
   
   if (!response.ok) {
     throw new Error('Failed to load diagnostic test');
@@ -70,7 +70,7 @@ export const logQuizAnswer = async (
   correct: boolean,
   topicTag: string
 ): Promise<void> => {
-  const response = await fetch(`${config.apiUrl}/api/quiz/log`, {
+  const response = await fetch(`http://localhost:3000/api/quiz/log`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -95,7 +95,7 @@ export const completeDiagnosticTest = async (
   config: ApiConfig,
   score: number
 ): Promise<any> => {
-  const response = await fetch(`${config.apiUrl}/api/quiz/complete-diagnostic`, {
+  const response = await fetch(`http://localhost:3000/api/quiz/complete-diagnostic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -113,12 +113,12 @@ export const completeDiagnosticTest = async (
   return data.data;
 };
 
-// Course API calls
+// Course API calls - Using port 3000
 export const startCourse = async (
   config: ApiConfig,
   courseId: string
 ): Promise<any> => {
-  const response = await fetch(`${config.apiUrl}/api/chat/course/start`, {
+  const response = await fetch(`http://localhost:3000/api/chat/course/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -139,7 +139,7 @@ export const navigateCoursePage = async (
   config: ApiConfig,
   pageIndex: number
 ): Promise<any> => {
-  const response = await fetch(`${config.apiUrl}/api/chat/course/navigate`, {
+  const response = await fetch(`http://localhost:3000/api/chat/course/navigate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -159,7 +159,7 @@ export const submitCourseQuiz = async (
   config: ApiConfig,
   answers: number[]
 ): Promise<any> => {
-  const response = await fetch(`${config.apiUrl}/api/chat/course/quiz`, {
+  const response = await fetch(`http://localhost:3000/api/chat/course/quiz`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -175,7 +175,7 @@ export const submitCourseQuiz = async (
   return response.json();
 };
 
-// Content upload API calls
+// Content upload API calls - Using port 3000
 export const uploadFile = async (
   config: ApiConfig,
   file: File
@@ -185,7 +185,7 @@ export const uploadFile = async (
   formData.append('userId', config.userId);
   formData.append('sessionId', config.sessionId);
 
-  const response = await fetch(`${config.apiUrl}/api/content/upload`, {
+  const response = await fetch(`http://localhost:3000/api/content/upload`, {
     method: 'POST',
     body: formData,
   });
@@ -202,7 +202,7 @@ export const removeFile = async (
   config: ApiConfig,
   fileName: string
 ): Promise<void> => {
-  const response = await fetch(`${config.apiUrl}/api/content/remove`, {
+  const response = await fetch(`http://localhost:3000/api/content/remove`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -217,11 +217,11 @@ export const removeFile = async (
   }
 };
 
-// New simplified diagnostic API functions
+// Diagnostic API functions - Using port 3000
 export const startDiagnosticTest = async (
   config: ApiConfig
 ): Promise<any> => {
-  const response = await fetch(`${config.apiUrl}/api/quiz/start-diagnostic`, {
+  const response = await fetch(`http://localhost:3000/api/quiz/start-diagnostic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -242,7 +242,7 @@ export const getDiagnosticQuestion = async (
   apiUrl: string,
   questionIndex: number
 ): Promise<any> => {
-  const response = await fetch(`${apiUrl}/api/quiz/diagnostic/question/${questionIndex}`);
+  const response = await fetch(`http://localhost:3000/api/quiz/diagnostic/question/${questionIndex}`);
   
   if (!response.ok) {
     throw new Error('Failed to get diagnostic question');
