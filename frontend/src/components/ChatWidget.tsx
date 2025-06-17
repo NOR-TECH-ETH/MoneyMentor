@@ -39,6 +39,7 @@ import {
   submitCourseQuiz,
   uploadFile,
   removeFile,
+  getAvailableCourses,
   
   // Session utilities
   initializeSession,
@@ -92,7 +93,7 @@ interface ChatWidgetProps {
 }
 
 export const ChatWidget: React.FC<ChatWidgetProps> = ({
-  apiUrl = 'http://localhost:8000',
+  apiUrl = 'http://localhost:3000',
   position = 'bottom-right',
   theme = 'light'
 }) => {
@@ -101,6 +102,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  const [activeMode, setActiveMode] = useState('chat');
   
   // Session State
   const [sessionIds, setSessionIds] = useState<SessionIds>({ userId: '', sessionId: '' });
@@ -126,14 +128,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   // Command autocomplete state
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [commandSuggestions, setCommandSuggestions] = useState<string[]>([]);
-  const [showCommandMenu, setShowCommandMenu] = useState(false);
+  const [showCommandMenu, setShowCommandMenu] = useState(true);
   
   // Available commands
   const availableCommands = [
     { command: 'diagnostic_test', description: 'Take a quick financial knowledge assessment' },
     { command: 'courses', description: 'View available learning courses' },
-    { command: 'chat', description: 'Start regular financial Q&A chat' },
-    { command: 'help', description: 'Show help and available commands' }
+    { command: 'chat', description: 'Start regular financial Q&A chat' }
   ];
   
   // Course State
@@ -202,10 +203,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       if (messages.length === 0) {
         const welcomeMessage = createWelcomeMessage(
           sessionIds.sessionId,
-          sessionIds.userId,
-          () => handleCommandSelect('diagnostic_test'),
-          () => handleCommandSelect('courses'),
-          () => handleCommandSelect('chat')
+          sessionIds.userId
         );
         setMessages([welcomeMessage]);
       }
@@ -215,9 +213,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         const welcomeMessage = createWelcomeMessage(
           sessionIds.sessionId,
           sessionIds.userId,
-          () => handleCommandSelect('diagnostic_test'),
-          () => handleCommandSelect('courses'),
-          () => handleCommandSelect('chat')
         );
         setMessages([welcomeMessage]);
       }
@@ -268,13 +263,14 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
       if (messageText === 'courses') {
         closeCurrentDisplays(); // Close any current displays
-        setIsLoading(false);
-        setShowCourseList(true);
         const coursesMessage = createSystemMessage(
           '📚 **Available Courses**\n\nHere are all the courses available for you:',
           sessionIds.sessionId,
           sessionIds.userId
         );
+        await handleCoursesList();
+        setIsLoading(false);
+        setShowCourseList(true);
         addMessage(coursesMessage);
         return;
       }
@@ -371,6 +367,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   // Handle command selection
   const handleCommandSelect = (command: string) => {
+    console.log('Setting active mode to:', command); // Debug log
+    setActiveMode(command);
     setInputValue(command);
     setShowCommandSuggestions(false);
     setCommandSuggestions([]);
@@ -533,6 +531,35 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   };
 
   // Course handling
+  const handleCoursesList = async () => {
+    closeCurrentDisplays(); // Close any current displays
+    setIsLoading(false);
+    try {
+      const response = await getAvailableCourses(apiConfig);
+     
+      
+      // Ensure the response matches the Course interface
+      const courses = Array.isArray(response) ? response : [];
+      setAvailableCourses(courses);
+      setShowCourseList(true);
+      
+      const coursesMessage = createSystemMessage(
+        '📚 **Available Courses**\n\nHere are all the courses available for you:',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      addMessage(coursesMessage);
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+      const errorMessage = createSystemMessage(
+        'Failed to fetch courses. Please try again later.',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      addMessage(errorMessage);
+    }
+  };
+
   const handleStartCourse = async (courseId: string) => {
     try {
       const response = await startCourse(apiConfig, courseId);
@@ -847,6 +874,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           commandSuggestions={commandSuggestions}
           showCommandMenu={showCommandMenu}
           availableCommands={availableCommands}
+          activeMode={activeMode}
           onInputChange={handleInputChange}
           onSendMessage={handleSendMessage}
           onFileUpload={handleFileUpload}

@@ -2174,25 +2174,52 @@
 .message-buttons {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.message-buttons.command-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  padding: 8px;
+  margin-bottom: 8px;
+  z-index: 1000;
+  display: flex;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .message-button {
-  background: #667eea;
-  color: white;
-  border: none;
   padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 0.9rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8f9fa;
+  color: #4a5568;
+  font-size: 14px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .message-button:hover {
-  background: #5a67d8;
+  background: #edf2f7;
+  transform: translateY(-1px);
 }
 
-.message-button:active {
-  background: #4c51bf;
+.message-button.active {
+  background: #4299e1;
+  color: white;
+  border-color: #3182ce;
+}
+
+.message-button.active:hover {
+  background: #3182ce;
 } 
