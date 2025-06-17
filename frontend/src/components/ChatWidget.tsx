@@ -39,6 +39,7 @@ import {
   submitCourseQuiz,
   uploadFile,
   removeFile,
+  getAvailableCourses,
   
   // Session utilities
   initializeSession,
@@ -132,8 +133,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const availableCommands = [
     { command: 'diagnostic_test', description: 'Take a quick financial knowledge assessment' },
     { command: 'courses', description: 'View available learning courses' },
-    { command: 'chat', description: 'Start regular financial Q&A chat' },
-    { command: 'help', description: 'Show help and available commands' }
+    { command: 'chat', description: 'Start regular financial Q&A chat' }
   ];
   
   // Course State
@@ -262,13 +262,14 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
       if (messageText === 'courses') {
         closeCurrentDisplays(); // Close any current displays
-        setIsLoading(false);
-        setShowCourseList(true);
         const coursesMessage = createSystemMessage(
           '📚 **Available Courses**\n\nHere are all the courses available for you:',
           sessionIds.sessionId,
           sessionIds.userId
         );
+        await handleCoursesList();
+        setIsLoading(false);
+        setShowCourseList(true);
         addMessage(coursesMessage);
         return;
       }
@@ -527,6 +528,35 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   };
 
   // Course handling
+  const handleCoursesList = async () => {
+    closeCurrentDisplays(); // Close any current displays
+    setIsLoading(false);
+    try {
+      const response = await getAvailableCourses(apiConfig);
+     
+      
+      // Ensure the response matches the Course interface
+      const courses = Array.isArray(response) ? response : [];
+      setAvailableCourses(courses);
+      setShowCourseList(true);
+      
+      const coursesMessage = createSystemMessage(
+        '📚 **Available Courses**\n\nHere are all the courses available for you:',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      addMessage(coursesMessage);
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+      const errorMessage = createSystemMessage(
+        'Failed to fetch courses. Please try again later.',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      addMessage(errorMessage);
+    }
+  };
+
   const handleStartCourse = async (courseId: string) => {
     try {
       const response = await startCourse(apiConfig, courseId);

@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { Send, Upload } from 'lucide-react';
 import '../../styles/ChatWidget.css';
 import { UploadProgress } from '../../utils/chatWidget';
+import { MessageButtons } from './MessageButtons';
 
 interface ChatInputProps {
   inputValue: string;
@@ -39,6 +40,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const handleTriggerFileUpload = () => {
     fileInputRef.current?.click();
   };
+
+  const commandButtons = availableCommands.map(cmd => ({
+    label: cmd.command,
+    action: () => onCommandSelect(cmd.command)
+  }));
 
   return (
     <div className="chat-input">
@@ -91,47 +97,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </div>
         )}
         
-        {/* Command Menu Dropdown */}
+        {/* Command Menu as MessageButtons */}
         {showCommandMenu && (
-          <div className="command-menu">
-            <div className="command-menu-header">
-              <span>Available Commands</span>
-              <button 
-                className="close-menu-btn"
-                onClick={onCloseCommandMenu}
-              >
-                ×
-              </button>
-            </div>
-            {availableCommands.map((cmd, index) => (
-              <div
-                key={index}
-                className="command-menu-item"
-                onClick={() => onCommandSelect(cmd.command)}
-              >
-                <span className="command-text">{cmd.command}</span>
-                <span className="command-description">{cmd.description}</span>
-              </div>
-            ))}
-          </div>
+          <MessageButtons
+            buttons={commandButtons}
+            className="command-menu"
+          />
         )}
       </div>
-      
-      <button 
+
+      <button
         className="send-btn"
         onClick={onSendMessage}
         disabled={isLoading || !inputValue.trim()}
       >
-        <Send size={20} />
+        <Send size={18} />
       </button>
-      
-      {/* Hidden file input */}
+
       <input
-        ref={fileInputRef}
         type="file"
-        multiple
-        accept=".pdf,.txt,.ppt,.pptx"
+        ref={fileInputRef}
         onChange={(e) => e.target.files && onFileUpload(e.target.files)}
+        accept=".pdf,.txt,.ppt,.pptx"
         style={{ display: 'none' }}
       />
     </div>

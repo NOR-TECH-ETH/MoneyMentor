@@ -2174,25 +2174,45 @@
 .message-buttons {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 
-.message-button {
-  background: #667eea;
-  color: white;
+.message-buttons.command-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  padding: 8px;
+  margin-bottom: 8px;
+  z-index: 1000;
+  background: transparent;
   border: none;
+  box-shadow: none;
+}
+
+.message-button {
+  background: #f8f9fa;
+  color: #495057;
+  border: 1px solid #e1e5e9;
   padding: 8px 16px;
   border-radius: 20px;
   font-size: 0.9rem;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .message-button:hover {
-  background: #5a67d8;
+  background: #e9ecef;
+  border-color: #007bff;
+  color: #007bff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .message-button:active {
-  background: #4c51bf;
+  background: #dee2e6;
+  transform: translateY(0);
 } 

@@ -114,6 +114,22 @@ export const completeDiagnosticTest = async (
 };
 
 // Course API calls - Using port 3000
+export const getAvailableCourses = async (
+  config: ApiConfig
+): Promise<any> => {
+  const response = await fetch(`http://localhost:3000/api/chat/courses?userId=${config.userId}&sessionId=${config.sessionId}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' }
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch courses');
+  }
+
+  const data = await response.json();
+  return data.data;
+};
+
 export const startCourse = async (
   config: ApiConfig,
   courseId: string

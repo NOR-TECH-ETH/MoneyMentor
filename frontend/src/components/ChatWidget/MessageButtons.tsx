@@ -6,13 +6,14 @@ interface MessageButtonsProps {
     label: string;
     action: () => void;
   }[];
+  className?: string;
 }
 
-export const MessageButtons: React.FC<MessageButtonsProps> = ({ buttons }) => {
+export const MessageButtons: React.FC<MessageButtonsProps> = ({ buttons, className = '' }) => {
   if (!buttons || buttons.length === 0) return null;
 
   return (
-    <div className="message-buttons">
+    <div className={`message-buttons ${className}`}>
       {buttons.map((button, index) => (
         <button
           key={index}
