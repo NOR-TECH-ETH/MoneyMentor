@@ -202,10 +202,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       if (messages.length === 0) {
         const welcomeMessage = createWelcomeMessage(
           sessionIds.sessionId,
-          sessionIds.userId,
-          () => handleCommandSelect('diagnostic_test'),
-          () => handleCommandSelect('courses'),
-          () => handleCommandSelect('chat')
+          sessionIds.userId
         );
         setMessages([welcomeMessage]);
       }
@@ -215,9 +212,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         const welcomeMessage = createWelcomeMessage(
           sessionIds.sessionId,
           sessionIds.userId,
-          () => handleCommandSelect('diagnostic_test'),
-          () => handleCommandSelect('courses'),
-          () => handleCommandSelect('chat')
         );
         setMessages([welcomeMessage]);
       }
