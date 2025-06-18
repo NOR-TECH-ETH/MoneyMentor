@@ -51,8 +51,7 @@ class ChatService:
                 response = await money_mentor_crew.process_message(
                     message=query,
                     chat_history=chat_history,
-                    session_id=session_id,
-                    context={}
+                    session_id=session_id
                 )
                 
                 # Ensure response is a dictionary

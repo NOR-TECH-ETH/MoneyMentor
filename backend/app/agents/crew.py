@@ -98,7 +98,7 @@ class MoneyMentorCrew:
                     Task(
                         description=f"""Process the user's message and provide a helpful response.
                         Use the following context from our knowledge base if relevant:
-                        {context}
+                        {context if context else "No specific content found in knowledge base - use your general financial education knowledge"}
                         
                         User message: {message}
                         
@@ -110,7 +110,7 @@ class MoneyMentorCrew:
                         - query: the search term from the user's question
                         - limit: 5 (default number of results)
                         
-                        If the context is relevant, incorporate it naturally into your response.
+                        If no specific content is found in the knowledge base, use your general financial education expertise to provide accurate, helpful information. Always aim to be educational and informative, even when specific content isn't available.
                         
                         Keep your responses natural and conversational while maintaining professionalism.
                         """,

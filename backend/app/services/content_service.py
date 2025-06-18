@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 import aiohttp
 from tenacity import retry, stop_after_attempt, wait_exponential
+import json
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
@@ -74,12 +75,12 @@ class ContentService:
                 timeout=60
             )
             
-            # Store chunk with embedding
+            # Store chunk with embedding - pgvector expects a list/array, not a string
             chunk_data = {
                 'file_id': file_id,
                 'chunk_index': chunk_index,
                 'content': chunk,
-                'embedding': embedding
+                'embedding': embedding  # Keep as list/array for pgvector
             }
             
             # Direct insert without transaction
@@ -360,7 +361,7 @@ class ContentService:
                 logger.error(f"Failed to generate embedding: {e}")
                 return []
             
-            # Search for similar chunks with error handling
+            # Try vector search first
             try:
                 result = self.supabase.rpc(
                     'match_chunks',
@@ -371,25 +372,50 @@ class ContentService:
                     }
                 ).execute()
                 
-                if not result.data:
-                    logger.info(f"No results found for query: {query}")
-                    return []
-                
-                # Process and validate results
-                processed_results = []
-                for item in result.data:
-                    if isinstance(item, dict) and 'content' in item:
-                        processed_results.append({
-                            'content': item['content'],
-                            'metadata': item.get('metadata', {}),
-                            'similarity': item.get('similarity', 0.0)
-                        })
-                
-                return processed_results
+                if result.data:
+                    # Process and validate results
+                    processed_results = []
+                    for item in result.data:
+                        if isinstance(item, dict) and 'content' in item:
+                            processed_results.append({
+                                'content': item['content'],
+                                'metadata': {
+                                    'file_id': item.get('file_id'),
+                                    'chunk_index': item.get('chunk_index')
+                                },
+                                'similarity': item.get('similarity', 0.0)
+                            })
+                    
+                    return processed_results
                 
             except Exception as e:
-                logger.error(f"Vector search failed: {e}")
-                return []
+                logger.warning(f"Vector search failed, trying text search: {e}")
+            
+            # Fallback to text search if vector search fails
+            try:
+                logger.info("Using fallback text search")
+                result = self.supabase.table('content_chunks').select('content, file_id, chunk_index').ilike('content', f'%{query}%').limit(limit).execute()
+                
+                if result.data:
+                    processed_results = []
+                    for item in result.data:
+                        if isinstance(item, dict) and 'content' in item:
+                            processed_results.append({
+                                'content': item['content'],
+                                'metadata': {
+                                    'file_id': item.get('file_id'),
+                                    'chunk_index': item.get('chunk_index')
+                                },
+                                'similarity': 0.8  # Default similarity for text search
+                            })
+                    
+                    return processed_results
+                
+            except Exception as e:
+                logger.error(f"Text search also failed: {e}")
+            
+            logger.info(f"No results found for query: {query}")
+            return []
             
         except Exception as e:
             logger.error(f"Content search failed: {e}")
@@ -628,11 +654,11 @@ class ContentService:
             # Delete all chunks
             self.supabase.table('content_chunks').delete().neq('id', 0).execute()
             
-            # Update all files to deleted status
+            # Update all files to deleted status - use a condition that matches all records
+            # Since file_id is UUID, we'll use a condition that always matches
             self.supabase.table('content_files').update({
-                'status': 'deleted',
-                'deleted_at': datetime.utcnow().isoformat()
-            }).neq('id', 0).execute()
+                'status': 'deleted'
+            }).gte('file_id', '00000000-0000-0000-0000-000000000000').execute()
             
             print(f"✅ Successfully cleared {total_chunks} chunks")
             return {

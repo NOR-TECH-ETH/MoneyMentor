@@ -61,6 +61,16 @@ coverage.xml
 *.cover
 .hypothesis/
 
+backend/check_rpc.py
+backend/check_table_schema.py
+backend/check_table_structure.py
+backend/clear_and_reprocess.py
+backend/test_chunks.py
+backend/test_embeddings.py
+backend/test_search.py
+backend/test_specific_search.py
+backend/test_vector_search.py
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
