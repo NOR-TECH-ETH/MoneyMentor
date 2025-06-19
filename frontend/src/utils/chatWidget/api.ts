@@ -1,4 +1,4 @@
-import { ChatResponse, DiagnosticTest, QuizSession } from '../../types';
+import { ChatResponse, DiagnosticTest, QuizSession, QuizQuestion } from '../../types';
 
 export interface ApiConfig {
   apiUrl: string;
@@ -63,6 +63,28 @@ export const loadDiagnosticTest = async (
   return data.data;
 };
 
+export const completeDiagnosticTest = async (
+  config: ApiConfig,
+  score: number
+): Promise<any> => {
+  const response = await fetch(`http://localhost:3000/api/quiz/complete-diagnostic`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      userId: config.userId, 
+      sessionId: config.sessionId, 
+      score 
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to complete diagnostic test');
+  }
+
+  const data = await response.json();
+  return data.data;
+};
+
 export const logQuizAnswer = async (
   config: ApiConfig,
   quizId: string,
@@ -89,28 +111,6 @@ export const logQuizAnswer = async (
   if (!response.ok) {
     throw new Error('Failed to log quiz answer');
   }
-};
-
-export const completeDiagnosticTest = async (
-  config: ApiConfig,
-  score: number
-): Promise<any> => {
-  const response = await fetch(`http://localhost:3000/api/quiz/complete-diagnostic`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      userId: config.userId, 
-      sessionId: config.sessionId, 
-      score 
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to complete diagnostic test');
-  }
-
-  const data = await response.json();
-  return data.data;
 };
 
 // Course API calls - Using port 3000
@@ -262,6 +262,72 @@ export const getDiagnosticQuestion = async (
   
   if (!response.ok) {
     throw new Error('Failed to get diagnostic question');
+  }
+
+  const data = await response.json();
+  return data.data;
+};
+
+// New: Generate Diagnostic Quiz (POST /api/quiz/generate)
+export const generateDiagnosticQuiz = async (
+  config: ApiConfig
+): Promise<{ questions: QuizQuestion[]; quizId: string }> => {
+  const response = await fetch(`http://localhost:8000/api/quiz/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: config.sessionId,
+      quiz_type: 'diagnostic',
+      // Optionally add difficulty if needed
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to generate diagnostic quiz');
+  }
+
+  const data = await response.json();
+  // Map backend format to local QuizQuestion[]
+  const questions = data.questions.map((q: any) => ({
+    id: '', // Backend does not provide id, can generate if needed
+    question: q.question,
+    options: Object.values(q.choices),
+    correctAnswer: ['a', 'b', 'c', 'd'].indexOf(q.correct_answer.toLowerCase()),
+    explanation: q.explanation,
+    topicTag: q.topic || '',
+    difficulty: 'medium', // Default or map if provided
+  }));
+  return { questions, quizId: data.quiz_id };
+};
+
+// New: Submit Diagnostic Quiz (POST /api/quiz/submit)
+export const submitDiagnosticQuiz = async (
+  config: ApiConfig,
+  quizId: string,
+  questions: QuizQuestion[],
+  answers: number[],
+  userId: string
+): Promise<any> => {
+  // Prepare responses array for backend
+  const responses = questions.map((q, idx) => ({
+    quiz_id: quizId,
+    selected_option: String.fromCharCode(65 + answers[idx]), // 'A', 'B', ...
+    correct: answers[idx] === q.correctAnswer,
+    topic: q.topicTag || '',
+  }));
+
+  const response = await fetch(`http://localhost:8000/api/quiz/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      quiz_type: 'diagnostic',
+      responses
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to submit diagnostic quiz');
   }
 
   const data = await response.json();

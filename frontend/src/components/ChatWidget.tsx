@@ -86,6 +86,8 @@ import {
   formatFileSize,
 } from '../utils/chatWidget';
 
+import { fetchDiagnosticQuiz, submitDiagnosticQuizAnswers, setupDiagnosticTest, handleDiagnosticAnswer, goToNextQuestion, calculateDiagnosticResults, resetDiagnosticState } from '../utils/chatWidget/diagnosticUtils';
+
 interface ChatWidgetProps {
   apiUrl?: string;
   position?: 'bottom-right' | 'bottom-left' | 'fullscreen';
@@ -116,12 +118,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [showQuizFeedback, setShowQuizFeedback] = useState(false);
   const [lastQuizAnswer, setLastQuizAnswer] = useState<QuizFeedback | null>(null);
   
-  // Diagnostic State - Simplified to work like regular quiz
+  // Diagnostic State
   const [diagnosticState, setDiagnosticState] = useState<DiagnosticState>(initializeDiagnosticState());
   const [isDiagnosticMode, setIsDiagnosticMode] = useState(false);
-  const [diagnosticQuestionIndex, setDiagnosticQuestionIndex] = useState(0);
-  const [diagnosticAnswers, setDiagnosticAnswers] = useState<number[]>([]);
-  const [diagnosticTotalQuestions, setDiagnosticTotalQuestions] = useState(3);
   const [showDiagnosticFeedback, setShowDiagnosticFeedback] = useState(false);
   const [diagnosticFeedback, setDiagnosticFeedback] = useState<QuizFeedback | null>(null);
   
@@ -237,9 +236,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setLastQuizAnswer(null);
     setCourseQuiz(null);
     setCourseQuizAnswers({ answers: [], currentQuestionIndex: 0 });
-    setDiagnosticQuestionIndex(0);
-    setDiagnosticAnswers([]);
-    setDiagnosticTotalQuestions(0);
+    setDiagnosticState(initializeDiagnosticState());
   };
 
   const handleSendMessage = async (commandText?: string) => {
@@ -405,21 +402,20 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     }
   };
 
-  // Diagnostic test handling - Simplified approach
+  // Diagnostic test handling
   const handleStartDiagnosticTest = async () => {
     try {
-      const response = await startDiagnosticTest(apiConfig);
-      
-      // Set the first question as current quiz
-      setCurrentQuiz(response.question);
+      closeCurrentDisplays();
+      setIsLoading(true);
+      // Fetch diagnostic quiz from backend
+      const { test, quizId } = await fetchDiagnosticQuiz(apiConfig);
+      setDiagnosticState(setupDiagnosticTest(test, quizId));
       setIsDiagnosticMode(true);
-      setDiagnosticQuestionIndex(0);
-      setDiagnosticAnswers([]);
-      setDiagnosticTotalQuestions(response.totalQuestions);
-      
+      setShowDiagnosticFeedback(false);
+      setDiagnosticFeedback(null);
       // Add intro message
       const introMessage = createSystemMessage(
-        response.message,
+        '🎯 **Starting Diagnostic Test**\n\nThis quick assessment will help me understand your financial knowledge level and provide personalized course recommendations.',
         sessionIds.sessionId,
         sessionIds.userId
       );
@@ -432,101 +428,75 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         sessionIds.userId
       );
       addMessage(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleDiagnosticQuizAnswer = async (selectedOption: number, correct: boolean) => {
-    if (!currentQuiz || !isDiagnosticMode) return;
-
-    try {
-      // Log the answer
-      await logQuizAnswer(
-        apiConfig,
-        currentQuiz.id,
-        selectedOption,
-        correct,
-        currentQuiz.topicTag
-      );
-
-      // Store the answer
-      const newAnswers = [...diagnosticAnswers];
-      newAnswers[diagnosticQuestionIndex] = selectedOption;
-      setDiagnosticAnswers(newAnswers);
-
-      // Hide the question and show feedback in its place
-      const feedback = createQuizFeedback(selectedOption, currentQuiz.correctAnswer, currentQuiz.explanation);
-      setDiagnosticFeedback(feedback);
-      setShowDiagnosticFeedback(true);
-      setCurrentQuiz(null); // Hide the question
-      
-      // Auto-hide feedback and move to next question after 3 seconds
-      setTimeout(async () => {
-        setShowDiagnosticFeedback(false);
-        setDiagnosticFeedback(null);
-        
-        if (diagnosticQuestionIndex < diagnosticTotalQuestions - 1) {
-          // Get next question
-          try {
-            const nextIndex = diagnosticQuestionIndex + 1;
-            const response = await getDiagnosticQuestion(apiUrl, nextIndex);
-            setCurrentQuiz(response.question);
-            setDiagnosticQuestionIndex(nextIndex);
-          } catch (error) {
-            console.error('Failed to get next diagnostic question:', error);
-          }
+    if (!diagnosticState.test || !isDiagnosticMode) return;
+    // Store the answer
+    const updatedState = handleDiagnosticAnswer(diagnosticState, selectedOption);
+    setDiagnosticState(updatedState);
+    // Show feedback
+    const currentQuestion = diagnosticState.test.questions[diagnosticState.currentQuestionIndex];
+    const feedback = createQuizFeedback(selectedOption, currentQuestion.correctAnswer, currentQuestion.explanation);
+    setDiagnosticFeedback(feedback);
+    setShowDiagnosticFeedback(true);
+    // Auto-hide feedback and move to next question after 3 seconds
+    setTimeout(() => {
+      setShowDiagnosticFeedback(false);
+      setDiagnosticFeedback(null);
+      setDiagnosticState(prevState => {
+        if (
+          prevState.test &&
+          prevState.currentQuestionIndex < prevState.test.questions.length - 1
+        ) {
+          return goToNextQuestion(prevState);
         } else {
-          // Complete diagnostic test
-          await handleCompleteDiagnosticTest(newAnswers);
+          // Call complete outside of setDiagnosticState
+          setTimeout(() => handleCompleteDiagnosticTest(prevState), 0);
+          return prevState;
         }
-      }, 3000);
-    } catch (error) {
-      console.error('Diagnostic quiz logging error:', error);
-    }
+      });
+    }, 3000);
   };
 
-  const handleCompleteDiagnosticTest = async (answers: number[]) => {
+  const handleCompleteDiagnosticTest = async (state: DiagnosticState) => {
     try {
-      // Calculate score
-      let correctCount = 0;
-      // We need to get all questions to calculate the score properly
-      // For now, we'll use a simple calculation
-      const score = Math.round((correctCount / diagnosticTotalQuestions) * 100);
-      
-      const response = await completeDiagnosticTest(apiConfig, score);
-      
-      if (quizSession) {
-        setQuizSession({ ...quizSession, completedPreTest: true });
-      }
-
-      // Reset diagnostic state
+      if (!state.test || !state.quizId) return;
+      setIsLoading(true);
+      const result = await submitDiagnosticQuizAnswers(
+        apiConfig,
+        state.quizId,
+        state.test.questions,
+        state.answers,
+        sessionIds.userId
+      );
+      // Optionally, use result to show score, recommendations, etc.
       setIsDiagnosticMode(false);
-      setCurrentQuiz(null);
-      setDiagnosticQuestionIndex(0);
-      setDiagnosticAnswers([]);
-      
+      setDiagnosticState(resetDiagnosticState());
       // Create completion message
       const completionMessage = createSystemMessage(
-        `🎉 **Assessment Complete!**\n\n📊 **Your Score**: ${score}%\n\n💡 **What's Next**: I'll show you personalized course recommendations below based on your results!`,
+        `🎉 **Assessment Complete!**\n\n📊 **Your Score**: ${result.overall_score}%\n\n💡 **What's Next**: I'll show you personalized course recommendations below based on your results!`,
         sessionIds.sessionId,
         sessionIds.userId
       );
       addMessage(completionMessage);
-
       // Set recommended courses if available
-      if (response.recommendedCourses && response.recommendedCourses.length > 0) {
-        setAvailableCourses(response.recommendedCourses);
-        setShowCourseList(true);
-        
-        // Add a message about recommended courses
-        const courseRecommendationMessage = createSystemMessage(
-          `🎯 **Personalized Course Recommendations**\n\nBased on your assessment results, here are the courses I recommend for you:`,
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        addMessage(courseRecommendationMessage);
+      if (result.topic_breakdown) {
+        // You can use topic_breakdown to recommend courses
       }
     } catch (error) {
       console.error('Failed to complete diagnostic test:', error);
+      const errorMessage = createSystemMessage(
+        'Failed to complete diagnostic test. Please try again later.',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      addMessage(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -746,6 +716,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     }
   };
 
+  const hasDiagnosticTest = diagnosticState.test && diagnosticState.test.questions.length > 0;
+  const currentDiagnosticQuiz = hasDiagnosticTest ? diagnosticState.test!.questions[diagnosticState.currentQuestionIndex] : null;
+  const currentDiagnosticQuestionIndex = hasDiagnosticTest ? diagnosticState.currentQuestionIndex : 0;
+  const diagnosticTotalQuestions = diagnosticState.test ? diagnosticState.test.questions.length : 0;
+
   if (!isOpen) {
     return (
       <div className={`chat-widget-container ${position}`}>
@@ -815,10 +790,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           {/* Diagnostic Test Component */}
           <DiagnosticTest
             isDiagnosticMode={isDiagnosticMode}
-            currentQuiz={currentQuiz}
+            currentQuiz={currentDiagnosticQuiz}
             showDiagnosticFeedback={showDiagnosticFeedback}
             diagnosticFeedback={diagnosticFeedback}
-            diagnosticQuestionIndex={diagnosticQuestionIndex}
+            diagnosticQuestionIndex={currentDiagnosticQuestionIndex}
             diagnosticTotalQuestions={diagnosticTotalQuestions}
             onDiagnosticQuizAnswer={handleDiagnosticQuizAnswer}
           />

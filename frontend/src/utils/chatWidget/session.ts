@@ -28,8 +28,16 @@ export const initializeSession = (): SessionIds => {
 /**
  * Generate a new session ID and store it
  */
-export const generateNewSession = (): string => {
-  const sessionId = uuidv4();
+export const generateNewSession = async (): Promise<string> => {
+  const response = await fetch('http://localhost:8000/api/quiz/session/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!response.ok) {
+    throw new Error('Failed to create session');
+  }
+  const data = await response.json();
+  const sessionId = data.id;
   localStorage.setItem(STORAGE_KEYS.SESSION_ID, sessionId);
   return sessionId;
 };
