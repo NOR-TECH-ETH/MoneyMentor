@@ -451,37 +451,47 @@ class QuizService:
             logger.error(f"Error extracting topic from message: {e}")
             return "General Finance"
 
-    async def generate_quiz_from_history(self, session_id: str, quiz_type: str, difficulty: str, chat_history: list) -> list:
-        """Generate a single micro-quiz question based on recent chat history, quiz_type, and difficulty."""
+    async def generate_quiz_from_history(self, session_id: str, topic: str, quiz_type: str, difficulty: str, chat_history: list) -> list:
+        """Generate a quiz based on chat history, topic, quiz_type, and difficulty."""
         try:
-            # Use the last 4-5 messages for context
-            recent_history = chat_history[-5:]
+            # Prepare prompt for LLM
             chat_context = "\n".join([
-                f"{msg['role']}: {msg['content']}" for msg in recent_history if 'role' in msg and 'content' in msg
+                f"{msg['role']}: {msg['content']}" for msg in chat_history if 'role' in msg and 'content' in msg
             ])
             prompt = (
-                f"Based on the following recent chat history, generate a single multiple-choice quiz question "
-                f"that is relevant to the user's recent discussion. The difficulty should be {difficulty}. "
-                f"Return a JSON object with: 'question', 'choices' (object with keys 'a', 'b', 'c', 'd'), "
-                f"'correct_answer' (a/b/c/d), and 'explanation'.\n"
-                f"Chat history:\n{chat_context}"
+                f"You are a financial education assistant. Based on the following chat history, "
+                f"generate a {quiz_type} quiz for the user. The quiz should be about the most relevant topic "
+                f"from the conversation (topic: {topic}). The difficulty should be {difficulty}.\n"
+                f"Chat history:\n{chat_context}\n"
+                f"Return a JSON array of questions. Each question should have: 'question' (text), 'choices' (an object with keys 'a', 'b', 'c', 'd' and string values), 'correct_answer' (one of 'a', 'b', 'c', 'd'), and 'explanation' (short explanation for the correct answer). Example format: [{{'question': '...', 'choices': {{'a': '...', 'b': '...', 'c': '...', 'd': '...'}}, 'correct_answer': 'a', 'explanation': '...'}}]"
             )
             response = self.llm.invoke([HumanMessage(content=prompt)])
             import json
             try:
-                question = json.loads(response.content)
-                # Ensure the structure is correct
-                if 'question' in question and 'choices' in question and 'correct_answer' in question:
-                    return [{
-                        'question': question.get('question', ''),
-                        'choices': question.get('choices', {}),
-                        'correct_answer': question.get('correct_answer', ''),
-                        'explanation': question.get('explanation', '')
-                    }]
+                questions = json.loads(response.content)
             except Exception as e:
-                logger.error(f"Failed to parse micro quiz JSON: {e}")
-                return []
-            return []
+                logger.error(f"Failed to parse LLM response as JSON: {e}, response: {response.content}")
+                raise ValueError("LLM did not return valid JSON.")
+
+            # Post-process to ensure structure
+            processed_questions = []
+            for q in questions:
+                # If 'options' is present, convert to 'choices'
+                if 'options' in q and isinstance(q['options'], list) and len(q['options']) == 4:
+                    q['choices'] = {k: v for k, v in zip(['a', 'b', 'c', 'd'], q['options'])}
+                    q.pop('options')
+                # If 'choices' is present but not a dict, try to fix
+                if 'choices' in q and not isinstance(q['choices'], dict):
+                    if isinstance(q['choices'], list) and len(q['choices']) == 4:
+                        q['choices'] = {k: v for k, v in zip(['a', 'b', 'c', 'd'], q['choices'])}
+                # Ensure only the required keys are present
+                processed_questions.append({
+                    'question': q.get('question', ''),
+                    'choices': q.get('choices', {}),
+                    'correct_answer': q.get('correct_answer', ''),
+                    'explanation': q.get('explanation', '')
+                })
+            return processed_questions
         except Exception as e:
             logger.error(f"Failed to generate quiz from history: {e}")
             raise 

@@ -48,6 +48,81 @@ class QuizAttemptResponse(BaseModel):
     explanation: str = Field(..., description="Explanation of the correct answer")
     correct_answer: int = Field(..., description="Index of correct answer")
 
+class QuizSubmission(BaseModel):
+    """Schema for quiz response submission"""
+    user_id: str = Field(..., description="User identifier")
+    quiz_id: str = Field(..., description="Quiz identifier")
+    selected_option: str = Field(..., description="Selected answer (A, B, C, or D)", pattern="^[A-D]$")
+    correct: bool = Field(..., description="Whether the answer was correct")
+    topic: str = Field(..., description="Quiz topic")
+    quiz_type: str = Field("micro", description="Type of quiz (micro, diagnostic, etc.)")
+    
+    @field_validator('selected_option')
+    @classmethod
+    def validate_selected_option(cls, v):
+        if v not in ['A', 'B', 'C', 'D']:
+            raise ValueError('selected_option must be A, B, C, or D')
+        return v
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": "user123",
+                "quiz_id": "quiz456",
+                "selected_option": "B",
+                "correct": True,
+                "topic": "Investing",
+                "quiz_type": "micro"
+            }
+        }
+
+class QuizSubmissionBatch(BaseModel):
+    """Schema for submitting multiple quiz responses at once"""
+    user_id: str = Field(..., description="User identifier")
+    quiz_type: str = Field("micro", description="Type of quiz (micro, diagnostic, etc.)")
+    responses: List[Dict[str, Any]] = Field(..., description="List of quiz responses")
+    
+    @field_validator('responses')
+    @classmethod
+    def validate_responses(cls, v):
+        if not v:
+            raise ValueError('responses list cannot be empty')
+        
+        for i, response in enumerate(v):
+            required_fields = ['quiz_id', 'selected_option', 'correct', 'topic']
+            for field in required_fields:
+                if field not in response:
+                    raise ValueError(f'Response {i} missing required field: {field}')
+            
+            # Validate selected_option
+            selected = response.get('selected_option')
+            if selected not in ['A', 'B', 'C', 'D']:
+                raise ValueError(f'Response {i} selected_option must be A, B, C, or D')
+        
+        return v
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": "user123",
+                "quiz_type": "diagnostic",
+                "responses": [
+                    {
+                        "quiz_id": "quiz_1",
+                        "selected_option": "B",
+                        "correct": True,
+                        "topic": "Investing"
+                    },
+                    {
+                        "quiz_id": "quiz_2", 
+                        "selected_option": "A",
+                        "correct": False,
+                        "topic": "Budgeting"
+                    }
+                ]
+            }
+        }
+
 class CalculationRequest(BaseModel):
     calculation_type: str = Field(..., description="Type of calculation (payoff, savings, loan)")
     principal: float = Field(..., description="Principal amount")
