@@ -402,24 +402,35 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     }
   };
 
+  // Add a helper function to remove specific messages by content pattern
+  const removeIntroMessage = (contentPattern: string) => {
+    setMessages(prev => prev.filter(msg => !msg.content.includes(contentPattern)));
+  };
+
   // Diagnostic test handling
   const handleStartDiagnosticTest = async () => {
     try {
       closeCurrentDisplays();
       setIsLoading(true);
+      
+      // Add intro message while loading
+      const introMessage = createSystemMessage(
+        '🎯 **Starting Diagnostic Test**\n\nThis quick assessment will help me understand your financial knowledge level and provide personalized course recommendations.\n\n📊 **5 questions** covering budgeting, saving, investing, and debt management\n⏱️ **Takes about 2-3 minutes**\n\nLet\'s begin!',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      addMessage(introMessage);
+      
       // Fetch diagnostic quiz from backend
       const { test, quizId } = await fetchDiagnosticQuiz(apiConfig);
       setDiagnosticState(setupDiagnosticTest(test, quizId));
       setIsDiagnosticMode(true);
       setShowDiagnosticFeedback(false);
       setDiagnosticFeedback(null);
-      // Add intro message
-      const introMessage = createSystemMessage(
-        '🎯 **Starting Diagnostic Test**\n\nThis quick assessment will help me understand your financial knowledge level and provide personalized course recommendations.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(introMessage);
+      
+      // Remove the intro message once questions are loaded
+      removeIntroMessage('🎯 **Starting Diagnostic Test**');
+      
     } catch (error) {
       console.error('Failed to start diagnostic test:', error);
       const errorMessage = createSystemMessage(
@@ -502,23 +513,28 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   // Course handling
   const handleCoursesList = async () => {
-    closeCurrentDisplays(); // Close any current displays
-    setIsLoading(false);
+    closeCurrentDisplays();
+    setIsLoading(true);
+    
+    // Add intro message while loading
+    const coursesMessage = createSystemMessage(
+      '📚 **Available Courses**\n\nHere are all the courses available for you:',
+      sessionIds.sessionId,
+      sessionIds.userId
+    );
+    addMessage(coursesMessage);
+    
     try {
       const response = await getAvailableCourses(apiConfig);
-     
       
       // Ensure the response matches the Course interface
       const courses = Array.isArray(response) ? response : [];
       setAvailableCourses(courses);
       setShowCourseList(true);
       
-      const coursesMessage = createSystemMessage(
-        '📚 **Available Courses**\n\nHere are all the courses available for you:',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(coursesMessage);
+      // Remove the intro message once courses are loaded
+      removeIntroMessage('📚 **Available Courses**');
+      
     } catch (error) {
       console.error('Error fetching courses:', error);
       const errorMessage = createSystemMessage(
@@ -527,6 +543,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         sessionIds.userId
       );
       addMessage(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
