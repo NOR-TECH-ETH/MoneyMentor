@@ -8,4 +8,5 @@ export { UploadedFilesDisplay } from './UploadedFilesDisplay';
 export { ChatInput } from './ChatInput';
 export { CommandInput } from './CommandInput';
 export { CalculationResult } from './CalculationResult';
-export { MessageButtons } from './MessageButtons'; 
+export { MessageButtons } from './MessageButtons';
+export * from './QuizHistoryDropdown'; 

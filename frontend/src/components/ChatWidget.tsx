@@ -22,6 +22,7 @@ import {
   CommandInput,
   CalculationResult,
   MessageButtons,
+  QuizHistoryDropdown,
 } from './ChatWidget/index';
 
 // Import Windows component
@@ -402,12 +403,25 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   // Quiz answer counters for chat window
   const [chatQuizTotalAnswered, setChatQuizTotalAnswered] = useState(0);
   const [chatQuizCorrectAnswered, setChatQuizCorrectAnswered] = useState(0);
+  // Quiz dropdown state and history
+  const [showQuizDropdown, setShowQuizDropdown] = useState(false);
+  const [chatQuizHistory, setChatQuizHistory] = useState<any[]>([
+    // Test data to see if dropdown works
+    {
+      question: "What is compound interest?",
+      options: ["Interest on interest", "Simple interest", "Fixed interest", "Variable interest"],
+      correctAnswer: 0,
+      userAnswer: 0,
+      explanation: "Compound interest is interest earned on both the principal and the accumulated interest.",
+      topicTag: "investing"
+    }
+  ]);
   
   // Available commands
   const availableCommands = [
     { command: 'diagnostic_test', description: 'Take a quick financial knowledge assessment' },
     { command: 'courses', description: 'View available learning courses' },
-    { command: 'chat', description: 'Start regular financial Q&A chat' }
+   
   ];
   
   // Window management state
@@ -788,10 +802,25 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       ...prev,
       createAssistantMessage(
         feedbackContent,
-        sessionIds.sessionId,
-        sessionIds.userId
+            sessionIds.sessionId,
+            sessionIds.userId
       )
     ]);
+
+    // Add to quiz history
+    if (chatCurrentQuiz) {
+      setChatQuizHistory(prev => [
+        ...prev,
+        {
+          question: chatCurrentQuiz.question,
+          options: chatCurrentQuiz.options,
+          correctAnswer: chatCurrentQuiz.correctAnswer,
+          userAnswer: selectedOption,
+          explanation: chatCurrentQuiz.explanation,
+          topicTag: chatCurrentQuiz.topicTag || '',
+        }
+      ]);
+    }
 
     // Clear quiz/feedback state
     setChatShowQuizFeedback(false);
@@ -834,6 +863,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const learnCurrentDiagnosticQuestionIndex = hasLearnDiagnosticTest ? learnDiagnosticState.currentQuestionIndex : 0;
   const learnDiagnosticTotalQuestions = learnDiagnosticState.test ? learnDiagnosticState.test.questions.length : 0;
 
+  // Ref for the quiz tracker button
+  const quizTrackerRef = React.useRef<HTMLButtonElement>(null);
+
   if (!isOpen) {
     return (
       <div className={`chat-widget-container ${position}`}>
@@ -853,10 +885,30 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         <div className="chat-header">
           <h3>💰 MoneyMentor</h3>
           {currentWindow === 'chat' && (
-            <div className="quiz-progress-simple">
-              <span className="quiz-progress-simple-text">
-                {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
-              </span>
+            <div className="quiz-progress-simple" style={{ position: 'relative' }}>
+              <button
+                ref={quizTrackerRef}
+                className="quiz-progress-simple-btn"
+                onClick={() => {
+                  console.log('Quiz tracker clicked, current state:', showQuizDropdown);
+                  setShowQuizDropdown((prev) => {
+                    console.log('Setting showQuizDropdown to:', !prev);
+                    return !prev;
+                  });
+                }}
+                title="View quiz history"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                <span className="quiz-progress-simple-text">
+                  {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
+                </span>
+              </button>
+              <QuizHistoryDropdown
+                open={showQuizDropdown}
+                onClose={() => setShowQuizDropdown(false)}
+                anchorRef={quizTrackerRef}
+                quizHistory={chatQuizHistory}
+              />
             </div>
           )}
           <div className="chat-header-buttons">
