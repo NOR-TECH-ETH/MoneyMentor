@@ -19,6 +19,7 @@ interface ChatInputProps {
   onCommandSelect: (command: string) => void;
   onToggleCommandMenu: () => void;
   onCloseCommandMenu: () => void;
+  disabled?: boolean;
 }
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -35,7 +36,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onFileUpload,
   onCommandSelect,
   onToggleCommandMenu,
-  onCloseCommandMenu
+  onCloseCommandMenu,
+  disabled = false
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,7 +57,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         className="upload-btn"
         onClick={handleTriggerFileUpload}
         title="Upload file (PDF, TXT, PPT, PPTX)"
-        disabled={uploadProgress.isUploading}
+        disabled={uploadProgress.isUploading || disabled}
       >
         <Upload size={18} />
       </button>
@@ -67,7 +69,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           onChange={onInputChange}
           onKeyPress={(e) => e.key === 'Enter' && onSendMessage()}
           placeholder="Ask about budgeting, investing, or financial calculations..."
-          disabled={isLoading}
+          disabled={isLoading || disabled}
         />
         
         {/* Command Menu Button */}
@@ -75,6 +77,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           className="command-menu-btn"
           onClick={onToggleCommandMenu}
           title="Show available commands"
+          disabled={disabled}
         >
           <span className="command-slash">/</span>
         </button>
@@ -119,7 +122,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       <button
         className="send-btn"
         onClick={() => onSendMessage()}
-        disabled={isLoading || !inputValue.trim()}
+        disabled={isLoading || !inputValue.trim() || disabled}
       >
         <Send size={18} />
       </button>

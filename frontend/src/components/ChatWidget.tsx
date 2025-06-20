@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MessageCircle, X, Maximize2, Minimize2 } from 'lucide-react';
 import { 
   ChatMessage, 
@@ -22,6 +22,33 @@ import {
   CalculationResult,
   MessageButtons,
 } from './ChatWidget/index';
+
+// Import Windows component
+import { Windows } from './Windows';
+
+// Import logic handlers
+import {
+  handleSendMessage,
+  handleStartDiagnosticTest,
+  handleDiagnosticQuizAnswer,
+  handleCompleteDiagnosticTest,
+  handleCoursesList,
+  handleStartCourse,
+  handleNavigateCoursePage,
+  handleCompleteCourse,
+  handleSubmitCourseQuiz,
+  handleQuizAnswer,
+  handleFileUpload,
+  handleRemoveFile,
+  MessageHandlersProps,
+  DiagnosticHandlersProps,
+  CourseHandlersProps,
+  QuizHandlersProps,
+  FileHandlersProps
+} from '../logic';
+
+// Import custom hooks
+import { useSessionState, useScrollToBottom } from '../hooks';
 
 // Import utilities
 import {
@@ -86,7 +113,8 @@ import {
   formatFileSize,
 } from '../utils/chatWidget';
 
-import { fetchDiagnosticQuiz, submitDiagnosticQuizAnswers, setupDiagnosticTest, handleDiagnosticAnswer, goToNextQuestion, calculateDiagnosticResults, resetDiagnosticState } from '../utils/chatWidget/diagnosticUtils';
+// Import styles
+import '../styles/windows.css';
 
 interface ChatWidgetProps {
   apiUrl?: string;
@@ -106,8 +134,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [inputValue, setInputValue] = useState('');
   const [activeMode, setActiveMode] = useState('chat');
   
-  // Session State
-  const [sessionIds, setSessionIds] = useState<SessionIds>({ userId: '', sessionId: '' });
+  // Session State - using custom hook
+  const { sessionIds, setSessionIds } = useSessionState();
   const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
   
   // Messages State
@@ -150,41 +178,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>(initializeUploadProgress());
   
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Window management state
+  const [currentWindow, setCurrentWindow] = useState<'intro' | 'chat' | 'learn'>('intro');
 
-  // Handle clicking outside to close menus
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Element;
-      if (!target.closest('.input-container')) {
-        setShowCommandMenu(false);
-        setShowCommandSuggestions(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  // Initialize session on component mount
-  useEffect(() => {
-    const ids = initializeSession();
-    setSessionIds(ids);
-  }, []);
-
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Initialize session when widget opens
-  useEffect(() => {
-    if (isOpen && sessionIds.sessionId && sessionIds.userId) {
-      handleInitializeSession();
-    }
-  }, [isOpen, sessionIds.sessionId, sessionIds.userId]);
+  // Custom hook for scroll to bottom
+  const messagesEndRef = useScrollToBottom([messages]);
 
   // Create API config
   const apiConfig: ApiConfig = {
@@ -192,6 +190,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     userId: sessionIds.userId,
     sessionId: sessionIds.sessionId
   };
+
+  // Initialize session when widget opens
+  useEffect(() => {
+    if (isOpen && sessionIds.sessionId && sessionIds.userId) {
+      handleInitializeSession();
+    }
+  }, [isOpen, sessionIds.sessionId, sessionIds.userId]);
 
   // Session initialization
   const handleInitializeSession = async () => {
@@ -235,112 +240,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setShowQuizFeedback(false);
     setLastQuizAnswer(null);
     setCourseQuiz(null);
-    setCourseQuizAnswers({ answers: [], currentQuestionIndex: 0 });
+    setCourseQuizAnswers(initializeCourseQuizAnswers(0));
     setDiagnosticState(initializeDiagnosticState());
   };
 
-  const handleSendMessage = async (commandText?: string) => {
-    const messageText = commandText || inputValue.trim();
-    if (!messageText) return;
-
-    setIsLoading(true);
-    setInputValue('');
-    setShowCommandSuggestions(false);
-    setCommandSuggestions([]);
-    setShowCommandMenu(false);
-
-    try {
-      // Handle special commands
-      if (messageText === 'diagnostic_test') {
-        closeCurrentDisplays(); // Close any current displays
-        setIsLoading(false);
-        await handleStartDiagnosticTest();
-        return;
-      }
-
-      if (messageText === 'courses') {
-        closeCurrentDisplays(); // Close any current displays
-        const coursesMessage = createSystemMessage(
-          '📚 **Available Courses**\n\nHere are all the courses available for you:',
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        await handleCoursesList();
-        setIsLoading(false);
-        setShowCourseList(true);
-        addMessage(coursesMessage);
-        return;
-      }
-
-      if (messageText === 'help') {
-        closeCurrentDisplays(); // Close any current displays
-        setIsLoading(false);
-        const helpMessage = createSystemMessage(
-          '🤖 **MoneyMentor Commands**\n\n' +
-          availableCommands.map(cmd => `**${cmd.command}** - ${cmd.description}`).join('\n') +
-          '\n\n💡 **Tip**: You can also just ask me any financial question directly!',
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        addMessage(helpMessage);
-        return;
-      }
-
-      if (messageText === 'chat') {
-        closeCurrentDisplays(); // Close any current displays
-        setIsLoading(false);
-        const chatMessage = createSystemMessage(
-          '💬 **Chat Mode**\n\nI\'m ready to answer your financial questions! Ask me about budgeting, investing, debt management, and more.',
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        addMessage(chatMessage);
-        return;
-      }
-       // Add user message to chat
-       const userMessage = createUserMessage(
-        messageText,
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(userMessage);
-
-      const response = await sendChatMessage(apiConfig, messageText);
-      
-     
-      
-      // Handle backend response
-      if (response.message) {
-        const assistantMessage = createAssistantMessage(
-          response.message,
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        addMessage(assistantMessage);
-        
-        // Handle quiz if present
-        if (response.quiz) {
-          setCurrentQuiz(response.quiz);
-        }
-      } else {
-        const errorMessage = createSystemMessage(
-          'Sorry, I encountered an error. Please try again.',
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        addMessage(errorMessage);
-      }
-    } catch (error) {
-      console.error('Chat error:', error);
-      const errorMessage = createSystemMessage(
-        'Network error. Please check your connection.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
+  // Add a helper function to remove specific messages by content pattern
+  const removeIntroMessage = (contentPattern: string) => {
+    setMessages(prev => prev.filter(msg => !msg.content.includes(contentPattern)));
   };
 
   // Handle input changes for command autocomplete
@@ -371,237 +277,219 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setCommandSuggestions([]);
     setShowCommandMenu(false);
     // Send the command directly instead of waiting for input value update
-    handleSendMessage(command);
+    handleSendMessageWrapper(command);
   };
 
-  // Quiz handling
-  const handleQuizAnswer = async (selectedOption: number, correct: boolean) => {
-    if (!currentQuiz) return;
+  // Wrapper functions for logic handlers
+  const handleSendMessageWrapper = async (commandText?: string) => {
+    const messageText = commandText || inputValue.trim();
+    if (!messageText) return;
 
-    try {
-      await logQuizAnswer(
+    const props: MessageHandlersProps = {
         apiConfig,
-        currentQuiz.id,
-        selectedOption,
-        correct,
-        currentQuiz.topicTag
-      );
+      sessionIds,
+      addMessage,
+      setInputValue,
+      setShowCommandSuggestions,
+      setCommandSuggestions,
+      setShowCommandMenu,
+      setIsLoading,
+      closeCurrentDisplays,
+      handleStartDiagnosticTestWrapper,
+      handleCoursesListWrapper,
+      setCurrentQuiz
+    };
 
-      const feedback = createQuizFeedback(selectedOption, currentQuiz.correctAnswer, currentQuiz.explanation);
-      setLastQuizAnswer(feedback);
-      setShowQuizFeedback(true);
-      
-      // Auto-hide feedback after 3 seconds
-      setTimeout(() => {
-        setShowQuizFeedback(false);
-        setCurrentQuiz(null);
-        setLastQuizAnswer(null);
-      }, 3000);
-    } catch (error) {
-      console.error('Quiz logging error:', error);
-    }
+    await handleSendMessage(messageText, props);
   };
 
-  // Add a helper function to remove specific messages by content pattern
-  const removeIntroMessage = (contentPattern: string) => {
-    setMessages(prev => prev.filter(msg => !msg.content.includes(contentPattern)));
+  const handleStartDiagnosticTestWrapper = async () => {
+    const props: DiagnosticHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setIsLoading,
+      closeCurrentDisplays,
+      setDiagnosticState,
+      setIsDiagnosticMode,
+      setShowDiagnosticFeedback,
+      setDiagnosticFeedback,
+      removeIntroMessage,
+      handleCompleteDiagnosticTestWrapper
+    };
+
+    await handleStartDiagnosticTest(props);
   };
 
-  // Diagnostic test handling
-  const handleStartDiagnosticTest = async () => {
-    try {
-      closeCurrentDisplays();
-      setIsLoading(true);
-      
-      // Add intro message while loading
-      const introMessage = createSystemMessage(
-        '🎯 **Starting Diagnostic Test**\n\nThis quick assessment will help me understand your financial knowledge level and provide personalized course recommendations.\n\n📊 **5 questions** covering budgeting, saving, investing, and debt management\n⏱️ **Takes about 2-3 minutes**\n\nLet\'s begin!',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(introMessage);
-      
-      // Fetch diagnostic quiz from backend
-      const { test, quizId } = await fetchDiagnosticQuiz(apiConfig);
-      setDiagnosticState(setupDiagnosticTest(test, quizId));
-      setIsDiagnosticMode(true);
-      setShowDiagnosticFeedback(false);
-      setDiagnosticFeedback(null);
-      
-      // Remove the intro message once questions are loaded
-      removeIntroMessage('🎯 **Starting Diagnostic Test**');
-      
-    } catch (error) {
-      console.error('Failed to start diagnostic test:', error);
-      const errorMessage = createSystemMessage(
-        'Failed to start diagnostic test. Please try again later.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDiagnosticQuizAnswer = async (selectedOption: number, correct: boolean) => {
-    if (!diagnosticState.test || !isDiagnosticMode) return;
-    // Store the answer
-    const updatedState = handleDiagnosticAnswer(diagnosticState, selectedOption);
-    setDiagnosticState(updatedState);
-    // Show feedback
-    const currentQuestion = diagnosticState.test.questions[diagnosticState.currentQuestionIndex];
-    const feedback = createQuizFeedback(selectedOption, currentQuestion.correctAnswer, currentQuestion.explanation);
-    setDiagnosticFeedback(feedback);
-    setShowDiagnosticFeedback(true);
-    // Auto-hide feedback and move to next question after 3 seconds
-    setTimeout(() => {
-      setShowDiagnosticFeedback(false);
-      setDiagnosticFeedback(null);
-      setDiagnosticState(prevState => {
-        if (
-          prevState.test &&
-          prevState.currentQuestionIndex < prevState.test.questions.length - 1
-        ) {
-          return goToNextQuestion(prevState);
-        } else {
-          // Call complete outside of setDiagnosticState
-          setTimeout(() => handleCompleteDiagnosticTest(prevState), 0);
-          return prevState;
-        }
-      });
-    }, 3000);
-  };
-
-  const handleCompleteDiagnosticTest = async (state: DiagnosticState) => {
-    try {
-      if (!state.test || !state.quizId) return;
-      setIsLoading(true);
-      const result = await submitDiagnosticQuizAnswers(
+  const handleDiagnosticQuizAnswerWrapper = async (selectedOption: number, correct: boolean) => {
+    const props: DiagnosticHandlersProps = {
         apiConfig,
-        state.quizId,
-        state.test.questions,
-        state.answers,
-        sessionIds.userId
-      );
-      // Optionally, use result to show score, recommendations, etc.
-      setIsDiagnosticMode(false);
-      setDiagnosticState(resetDiagnosticState());
-      // Create completion message
-      const completionMessage = createSystemMessage(
-        `🎉 **Assessment Complete!**\n\n📊 **Your Score**: ${result.overall_score}%\n\n💡 **What's Next**: I'll show you personalized course recommendations below based on your results!`,
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(completionMessage);
-      // Set recommended courses if available
-      if (result.topic_breakdown) {
-        // You can use topic_breakdown to recommend courses
-      }
-    } catch (error) {
-      console.error('Failed to complete diagnostic test:', error);
-      const errorMessage = createSystemMessage(
-        'Failed to complete diagnostic test. Please try again later.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
+      sessionIds,
+      addMessage,
+      setIsLoading,
+      closeCurrentDisplays,
+      setDiagnosticState,
+      setIsDiagnosticMode,
+      setShowDiagnosticFeedback,
+      setDiagnosticFeedback,
+      removeIntroMessage,
+      handleCompleteDiagnosticTestWrapper
+    };
+
+    await handleDiagnosticQuizAnswer(selectedOption, correct, diagnosticState, props);
   };
 
-  // Course handling
-  const handleCoursesList = async () => {
-    closeCurrentDisplays();
-    setIsLoading(true);
-    
-    // Add intro message while loading
-    const coursesMessage = createSystemMessage(
-      '📚 **Available Courses**\n\nHere are all the courses available for you:',
-      sessionIds.sessionId,
-      sessionIds.userId
-    );
-    addMessage(coursesMessage);
-    
-    try {
-      const response = await getAvailableCourses(apiConfig);
-      
-      // Ensure the response matches the Course interface
-      const courses = Array.isArray(response) ? response : [];
-      setAvailableCourses(courses);
-      setShowCourseList(true);
-      
-      // Remove the intro message once courses are loaded
-      removeIntroMessage('📚 **Available Courses**');
-      
-    } catch (error) {
-      console.error('Error fetching courses:', error);
-      const errorMessage = createSystemMessage(
-        'Failed to fetch courses. Please try again later.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
+  const handleCompleteDiagnosticTestWrapper = async (state: DiagnosticState) => {
+    const props: DiagnosticHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setIsLoading,
+      closeCurrentDisplays,
+      setDiagnosticState,
+      setIsDiagnosticMode,
+      setShowDiagnosticFeedback,
+      setDiagnosticFeedback,
+      removeIntroMessage,
+      handleCompleteDiagnosticTestWrapper
+    };
+
+    await handleCompleteDiagnosticTest(state, props);
   };
 
-  const handleStartCourse = async (courseId: string) => {
-    try {
-      const response = await startCourse(apiConfig, courseId);
-      
-      if (response.success && response.data.currentPage) {
-        setCurrentCoursePage(response.data.currentPage);
-        setCurrentCourse(response.data.courseSession.activeCourse);
-        setShowCourseList(false);
-        
-        const startMessage = createSystemMessage(
-          formatCourseStartMessage(response.data.courseSession.activeCourse.title),
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        addMessage(startMessage);
-      }
-    } catch (error) {
-      console.error('Error starting course:', error);
-      const errorMessage = createSystemMessage(
-        'Failed to start course. Please try again.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-    }
+  const handleCoursesListWrapper = async () => {
+    const props: CourseHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setIsLoading,
+      closeCurrentDisplays,
+      setAvailableCourses,
+      setShowCourseList,
+      setCurrentCoursePage,
+      setCurrentCourse,
+      setCourseQuiz,
+      setCourseQuizAnswers,
+      removeIntroMessage
+    };
+
+    await handleCoursesList(props);
   };
 
-  const handleNavigateCoursePage = async (pageIndex: number) => {
-    try {
-      const response = await navigateCoursePage(apiConfig, pageIndex);
-      
-      if (response.success && response.data.page) {
-        setCurrentCoursePage(response.data.page);
-      }
-    } catch (error) {
-      console.error('Error navigating course:', error);
-    }
+  const handleStartCourseWrapper = async (courseId: string) => {
+    const props: CourseHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setIsLoading,
+      closeCurrentDisplays,
+      setAvailableCourses,
+      setShowCourseList,
+      setCurrentCoursePage,
+      setCurrentCourse,
+      setCourseQuiz,
+      setCourseQuizAnswers,
+      removeIntroMessage
+    };
+
+    await handleStartCourse(courseId, props);
   };
 
-  const handleCompleteCourse = () => {
-    if (currentCourse) {
-      setCourseQuiz(initializeCourseQuiz(currentCourse));
-      setCourseQuizAnswers(initializeCourseQuizAnswers(currentCourse.quizQuestions.length));
-      setCurrentCoursePage(null);
-      
-      const completionMessage = createSystemMessage(
-        formatCourseCompletionMessage(),
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(completionMessage);
-    }
+  const handleNavigateCoursePageWrapper = async (pageIndex: number) => {
+    const props: CourseHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setIsLoading,
+      closeCurrentDisplays,
+      setAvailableCourses,
+      setShowCourseList,
+      setCurrentCoursePage,
+      setCurrentCourse,
+      setCourseQuiz,
+      setCourseQuizAnswers,
+      removeIntroMessage
+    };
+
+    await handleNavigateCoursePage(pageIndex, props);
   };
 
+  const handleCompleteCourseWrapper = () => {
+    const props: CourseHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setIsLoading,
+      closeCurrentDisplays,
+      setAvailableCourses,
+      setShowCourseList,
+      setCurrentCoursePage,
+      setCurrentCourse,
+      setCourseQuiz,
+      setCourseQuizAnswers,
+      removeIntroMessage
+    };
+
+    handleCompleteCourse(currentCourse, props);
+  };
+
+  const handleSubmitCourseQuizWrapper = async () => {
+    const props: CourseHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setIsLoading,
+      closeCurrentDisplays,
+      setAvailableCourses,
+      setShowCourseList,
+      setCurrentCoursePage,
+      setCurrentCourse,
+      setCourseQuiz,
+      setCourseQuizAnswers,
+      removeIntroMessage
+    };
+
+    await handleSubmitCourseQuiz(courseQuiz, courseQuizAnswers, props);
+  };
+
+  const handleQuizAnswerWrapper = async (selectedOption: number, correct: boolean) => {
+    const props: QuizHandlersProps = {
+      apiConfig,
+      setLastQuizAnswer,
+      setShowQuizFeedback,
+      setCurrentQuiz
+    };
+
+    await handleQuizAnswer(selectedOption, correct, currentQuiz, props);
+  };
+
+  const handleFileUploadWrapper = async (files: FileList) => {
+    const props: FileHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setUploadedFiles,
+      setUploadProgress,
+      uploadedFiles
+    };
+
+    await handleFileUpload(files, props);
+  };
+
+  const handleRemoveFileWrapper = async (fileIndex: number) => {
+    const props: FileHandlersProps = {
+      apiConfig,
+      sessionIds,
+      addMessage,
+      setUploadedFiles,
+      setUploadProgress,
+      uploadedFiles
+    };
+
+    await handleRemoveFile(fileIndex, props);
+  };
+
+  // Course quiz functions
   const handleCourseQuizAnswerSelection = (questionIndex: number, selectedOption: number) => {
     const newAnswers = handleCourseQuizAnswer(courseQuizAnswers, questionIndex, selectedOption);
     setCourseQuizAnswers(newAnswers);
@@ -623,121 +511,29 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setCourseQuizAnswers(newAnswers);
   };
 
-  const handleSubmitCourseQuiz = async () => {
-    if (!courseQuiz) return;
-    
-    try {
-      const response = await submitCourseQuiz(apiConfig, courseQuizAnswers.answers);
-      
-      if (response.success) {
-        const { score, passed, explanations } = response.data;
-        const resultMessage = formatQuizResultMessage(score, passed, explanations);
-        
-        const message = createAssistantMessage(
-          resultMessage,
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        addMessage(message);
-        
-        const resetState = resetCourseQuizState();
-        setCourseQuiz(resetState.quiz);
-        setCourseQuizAnswers(resetState.answers);
-        setCurrentCourse(null);
-      }
-    } catch (error) {
-      console.error('Error submitting course quiz:', error);
-      const errorMessage = createSystemMessage(
-        'Failed to submit quiz. Please try again.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-    }
-  };
-
-  // File upload handling
-  const handleFileUpload = async (files: FileList) => {
-    const validation = validateFiles(files);
-    
-    if (validation.validFiles.length === 0) {
-      const errorMessage = createSystemMessage(
-        'Please upload valid files (PDF, TXT, PPT, PPTX) under 10MB each.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-      return;
-    }
-
-    setUploadProgress({ isUploading: true, progress: 0 });
-
-    try {
-      for (let i = 0; i < validation.validFiles.length; i++) {
-        const file = validation.validFiles[i];
-        
-        try {
-          await uploadFile(apiConfig, file);
-          setUploadedFiles(prev => [...prev, file]);
-          
-          const successMessage = createSystemMessage(
-            formatUploadSuccessMessage(file.name),
-            sessionIds.sessionId,
-            sessionIds.userId
-          );
-          addMessage(successMessage);
-        } catch (error) {
-          const errorMessage = createSystemMessage(
-            formatUploadErrorMessage(file.name, error instanceof Error ? error.message : 'Unknown error'),
-            sessionIds.sessionId,
-            sessionIds.userId
-          );
-          addMessage(errorMessage);
-        }
-
-        setUploadProgress(updateUploadProgress(i + 1, validation.validFiles.length, file.name));
-      }
-    } catch (error) {
-      console.error('Upload error:', error);
-      const errorMessage = createSystemMessage(
-        'Upload failed. Please check your connection and try again.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-    } finally {
-      setUploadProgress(resetUploadProgress());
-    }
-  };
-
-  const handleRemoveFile = async (fileIndex: number) => {
-    const file = uploadedFiles[fileIndex];
-    try {
-      await removeFile(apiConfig, file.name);
-      
-      setUploadedFiles(prev => prev.filter((_, index) => index !== fileIndex));
-      
-      const removalMessage = createSystemMessage(
-        formatFileRemovalMessage(file.name),
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(removalMessage);
-    } catch (error) {
-      console.error('Remove file error:', error);
-      const errorMessage = createSystemMessage(
-        'Failed to remove file. Please try again.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(errorMessage);
-    }
-  };
-
   const hasDiagnosticTest = diagnosticState.test && diagnosticState.test.questions.length > 0;
   const currentDiagnosticQuiz = hasDiagnosticTest ? diagnosticState.test!.questions[diagnosticState.currentQuestionIndex] : null;
   const currentDiagnosticQuestionIndex = hasDiagnosticTest ? diagnosticState.currentQuestionIndex : 0;
   const diagnosticTotalQuestions = diagnosticState.test ? diagnosticState.test.questions.length : 0;
+
+  // Navigation functions
+  const navigateToChat = () => {
+    console.log('navigateToChat called');
+    setCurrentWindow('chat');
+    closeCurrentDisplays();
+  };
+
+  const navigateToLearn = () => {
+    console.log('navigateToLearn called');
+    setCurrentWindow('learn');
+    closeCurrentDisplays();
+  };
+
+  const navigateToIntro = () => {
+    console.log('navigateToIntro called');
+    setCurrentWindow('intro');
+    closeCurrentDisplays();
+  };
 
   if (!isOpen) {
     return (
@@ -779,9 +575,19 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         {/* Uploaded Files Display Component */}
         <UploadedFilesDisplay 
           uploadedFiles={uploadedFiles}
-          onRemoveFile={handleRemoveFile}
+          onRemoveFile={handleRemoveFileWrapper}
         />
 
+        {/* Windows Component */}
+        <Windows
+          currentWindow={currentWindow}
+          onNavigateToChat={navigateToChat}
+          onNavigateToLearn={navigateToLearn}
+          onNavigateToIntro={navigateToIntro}
+          isExpanded={isExpanded}
+          hasUploads={uploadProgress.isUploading || uploadedFiles.length > 0}
+        >
+          {/* Chat Window Content */}
         <div className="chat-messages">
           {messages.map((message) => (
             <div key={message.id} className={`message ${message.type}`}>
@@ -808,12 +614,12 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           {/* Diagnostic Test Component */}
           <DiagnosticTest
             isDiagnosticMode={isDiagnosticMode}
-            currentQuiz={currentDiagnosticQuiz}
+              currentQuiz={currentDiagnosticQuiz}
             showDiagnosticFeedback={showDiagnosticFeedback}
             diagnosticFeedback={diagnosticFeedback}
-            diagnosticQuestionIndex={currentDiagnosticQuestionIndex}
+              diagnosticQuestionIndex={currentDiagnosticQuestionIndex}
             diagnosticTotalQuestions={diagnosticTotalQuestions}
-            onDiagnosticQuizAnswer={handleDiagnosticQuizAnswer}
+              onDiagnosticQuizAnswer={handleDiagnosticQuizAnswerWrapper}
           />
 
           {/* Quiz Component */}
@@ -822,21 +628,21 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
             showQuizFeedback={showQuizFeedback}
             lastQuizAnswer={lastQuizAnswer}
             isDiagnosticMode={isDiagnosticMode}
-            onQuizAnswer={handleQuizAnswer}
+              onQuizAnswer={handleQuizAnswerWrapper}
           />
 
           {/* Course List Component */}
           <CourseList
             showCourseList={showCourseList}
             availableCourses={availableCourses}
-            onStartCourse={handleStartCourse}
+              onStartCourse={handleStartCourseWrapper}
           />
 
           {/* Course Page Component */}
           <CoursePageComponent
             currentCoursePage={currentCoursePage}
-            onNavigateCoursePage={handleNavigateCoursePage}
-            onCompleteCourse={handleCompleteCourse}
+              onNavigateCoursePage={handleNavigateCoursePageWrapper}
+              onCompleteCourse={handleCompleteCourseWrapper}
           />
 
           {/* Course Quiz Component */}
@@ -845,7 +651,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
             courseQuizAnswers={courseQuizAnswers}
             onCourseQuizAnswerSelection={handleCourseQuizAnswerSelection}
             onCourseQuizNavigation={handleCourseQuizNavigation}
-            onSubmitCourseQuiz={handleSubmitCourseQuiz}
+              onSubmitCourseQuiz={handleSubmitCourseQuizWrapper}
             areAllQuestionsAnswered={areAllQuestionsAnswered}
           />
           
@@ -869,12 +675,14 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           availableCommands={availableCommands}
           activeMode={activeMode}
           onInputChange={handleInputChange}
-          onSendMessage={handleSendMessage}
-          onFileUpload={handleFileUpload}
+            onSendMessage={handleSendMessageWrapper}
+            onFileUpload={handleFileUploadWrapper}
           onCommandSelect={handleCommandSelect}
           onToggleCommandMenu={() => setShowCommandMenu(!showCommandMenu)}
           onCloseCommandMenu={() => setShowCommandMenu(false)}
+            disabled={currentWindow === 'intro'}
         />
+        </Windows>
       </div>
     </div>
   );

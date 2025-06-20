@@ -5,36 +5,7 @@ import './styles/ChatWidget.css';
 
 // Development demo app
 function DemoApp() {
-  const [backendStatus, setBackendStatus] = React.useState('❌ Not Connected');
-  const [calcStatus, setCalcStatus] = React.useState('❌ Not Connected');
-
-  React.useEffect(() => {
-    // Check backend status
-    fetch('http://localhost:3000/health')
-      .then(() => setBackendStatus('✅ Connected'))
-      .catch(() => setBackendStatus('❌ Not Connected'));
-
-    // Check calc service status
-    fetch('http://localhost:3001/health')
-      .then(() => setCalcStatus('✅ Connected'))
-      .catch(() => setCalcStatus('❌ Not Connected'));
-  }, []);
-
-  React.useEffect(() => {
-    // Update status indicators in the HTML
-    const backendEl = document.getElementById('backend-status');
-    const calcEl = document.getElementById('calc-status');
-    
-    if (backendEl) {
-      backendEl.textContent = backendStatus;
-      backendEl.className = `status-indicator ${backendStatus.includes('✅') ? 'status-running' : 'status-error'}`;
-    }
-    
-    if (calcEl) {
-      calcEl.textContent = calcStatus;
-      calcEl.className = `status-indicator ${calcStatus.includes('✅') ? 'status-running' : 'status-error'}`;
-    }
-  }, [backendStatus, calcStatus]);
+  console.log('DemoApp rendering...'); // Debug log
 
   return (
     <ChatWidget

@@ -161,6 +161,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 .message {
@@ -2222,4 +2223,9 @@
 
 .message-button.active:hover {
   background: #3182ce;
+}
+
+/* Disable input on intro window */
+.chat-widget.intro .chat-input-container {
+  display: none;
 } 
