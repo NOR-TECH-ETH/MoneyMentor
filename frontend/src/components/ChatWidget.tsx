@@ -19,6 +19,7 @@ import {
   UploadProgressIndicator,
   UploadedFilesDisplay,
   ChatInput,
+  CommandInput,
   CalculationResult,
   MessageButtons,
 } from './ChatWidget/index';
@@ -116,6 +117,260 @@ import {
 // Import styles
 import '../styles/windows.css';
 
+// Window class to encapsulate all window state and functionality
+class WindowInstance {
+  // Messages and input
+  messages: ChatMessage[] = [];
+  inputValue: string = '';
+  isLoading: boolean = false;
+  
+  // Quiz state
+  currentQuiz: QuizQuestion | null = null;
+  showQuizFeedback: boolean = false;
+  lastQuizAnswer: QuizFeedback | null = null;
+  
+  // Diagnostic state
+  diagnosticState: DiagnosticState = initializeDiagnosticState();
+  isDiagnosticMode: boolean = false;
+  showDiagnosticFeedback: boolean = false;
+  diagnosticFeedback: QuizFeedback | null = null;
+  
+  // Course state
+  availableCourses: Course[] = [];
+  currentCourse: Course | null = null;
+  currentCoursePage: CoursePage | null = null;
+  showCourseList: boolean = false;
+  courseQuiz: CourseQuizState | null = null;
+  courseQuizAnswers: CourseQuizAnswers = initializeCourseQuizAnswers(0);
+  
+  // File upload state (only for chat window)
+  uploadedFiles: File[] = [];
+  uploadProgress: UploadProgress = initializeUploadProgress();
+  
+  constructor(
+    private apiConfig: ApiConfig,
+    private sessionIds: SessionIds,
+    private windowName: 'chat' | 'learn',
+    private addMessage: (message: ChatMessage) => void,
+    private setInputValue: (value: string) => void,
+    private setIsLoading: (loading: boolean) => void,
+    private setCurrentQuiz: (quiz: QuizQuestion | null) => void,
+    private setShowQuizFeedback: (show: boolean) => void,
+    private setLastQuizAnswer: (answer: QuizFeedback | null) => void,
+    private setDiagnosticState: (state: DiagnosticState) => void,
+    private setIsDiagnosticMode: (mode: boolean) => void,
+    private setShowDiagnosticFeedback: (show: boolean) => void,
+    private setDiagnosticFeedback: (feedback: QuizFeedback | null) => void,
+    private setAvailableCourses: (courses: Course[]) => void,
+    private setShowCourseList: (show: boolean) => void,
+    private setCurrentCoursePage: (page: CoursePage | null) => void,
+    private setCurrentCourse: (course: Course | null) => void,
+    private setCourseQuiz: (quiz: CourseQuizState | null) => void,
+    private setCourseQuizAnswers: (answers: CourseQuizAnswers) => void,
+    private setUploadedFiles: (files: File[]) => void,
+    private setUploadProgress: (progress: UploadProgress) => void,
+    private removeIntroMessage: (pattern: string) => void
+  ) {}
+  
+  // Initialize welcome message
+  initializeWelcome() {
+    if (this.messages.length === 0) {
+      if (this.windowName === 'chat') {
+        const welcomeMessage = createWelcomeMessage(
+          this.sessionIds.sessionId,
+          this.sessionIds.userId
+        );
+        this.addMessage(welcomeMessage);
+      } else {
+        const learnWelcomeMessage = {
+          id: Date.now().toString(),
+          type: 'system' as const,
+          content: '📚 **Welcome to the Learning Center!**\n\nThis is your dedicated space for structured learning. Here you can access courses, track your progress, and earn certificates.\n\nTry typing: `/courses` to see available courses or `/diagnostic_test` to assess your knowledge level.',
+          timestamp: new Date().toISOString(),
+          sessionId: this.sessionIds.sessionId,
+          userId: this.sessionIds.userId
+        };
+        this.addMessage(learnWelcomeMessage);
+      }
+    }
+  }
+  
+  // Close current displays
+  closeCurrentDisplays() {
+    this.setShowCourseList(false);
+    this.setCurrentCoursePage(null);
+    this.setCurrentCourse(null);
+    this.setCurrentQuiz(null);
+    this.setIsDiagnosticMode(false);
+    this.setShowDiagnosticFeedback(false);
+    this.setDiagnosticFeedback(null);
+    this.setShowQuizFeedback(false);
+    this.setLastQuizAnswer(null);
+    this.setCourseQuiz(null);
+    this.setCourseQuizAnswers(initializeCourseQuizAnswers(0));
+    this.setDiagnosticState(initializeDiagnosticState());
+    this.setAvailableCourses([]);
+  }
+  
+  // Create message handlers props
+  createMessageHandlersProps(): MessageHandlersProps {
+    return {
+      apiConfig: this.apiConfig,
+      sessionIds: this.sessionIds,
+      addMessage: this.addMessage,
+      setInputValue: this.setInputValue,
+      setShowCommandSuggestions: () => {},
+      setCommandSuggestions: () => {},
+      setShowCommandMenu: () => {},
+      setIsLoading: this.setIsLoading,
+      closeCurrentDisplays: this.closeCurrentDisplays.bind(this),
+      handleStartDiagnosticTestWrapper: this.handleStartDiagnosticTest.bind(this),
+      handleCoursesListWrapper: this.handleCoursesList.bind(this),
+      setCurrentQuiz: this.setCurrentQuiz
+    };
+  }
+  
+  // Create diagnostic handlers props
+  createDiagnosticHandlersProps(): DiagnosticHandlersProps {
+    return {
+      apiConfig: this.apiConfig,
+      sessionIds: this.sessionIds,
+      addMessage: this.addMessage,
+      setIsLoading: this.setIsLoading,
+      closeCurrentDisplays: this.closeCurrentDisplays.bind(this),
+      setDiagnosticState: this.setDiagnosticState,
+      setIsDiagnosticMode: this.setIsDiagnosticMode,
+      setShowDiagnosticFeedback: this.setShowDiagnosticFeedback,
+      setDiagnosticFeedback: this.setDiagnosticFeedback,
+      removeIntroMessage: this.removeIntroMessage,
+      handleCompleteDiagnosticTestWrapper: this.handleCompleteDiagnosticTest.bind(this)
+    };
+  }
+  
+  // Create course handlers props
+  createCourseHandlersProps(): CourseHandlersProps {
+    return {
+      apiConfig: this.apiConfig,
+      sessionIds: this.sessionIds,
+      addMessage: this.addMessage,
+      setIsLoading: this.setIsLoading,
+      closeCurrentDisplays: this.closeCurrentDisplays.bind(this),
+      setAvailableCourses: this.setAvailableCourses,
+      setShowCourseList: this.setShowCourseList,
+      setCurrentCoursePage: this.setCurrentCoursePage,
+      setCurrentCourse: this.setCurrentCourse,
+      setCourseQuiz: this.setCourseQuiz,
+      setCourseQuizAnswers: this.setCourseQuizAnswers,
+      removeIntroMessage: this.removeIntroMessage
+    };
+  }
+  
+  // Create quiz handlers props
+  createQuizHandlersProps(): QuizHandlersProps {
+    return {
+      apiConfig: this.apiConfig,
+      setLastQuizAnswer: this.setLastQuizAnswer,
+      setShowQuizFeedback: this.setShowQuizFeedback,
+      setCurrentQuiz: this.setCurrentQuiz
+    };
+  }
+  
+  // Create file handlers props
+  createFileHandlersProps(): FileHandlersProps {
+    return {
+      apiConfig: this.apiConfig,
+      sessionIds: this.sessionIds,
+      addMessage: this.addMessage,
+      setUploadedFiles: this.setUploadedFiles,
+      setUploadProgress: this.setUploadProgress,
+      uploadedFiles: this.uploadedFiles
+    };
+  }
+  
+  // Handle send message
+  async handleSendMessage(messageText: string) {
+    await handleSendMessage(messageText, this.createMessageHandlersProps());
+  }
+  
+  // Handle start diagnostic test
+  async handleStartDiagnosticTest() {
+    await handleStartDiagnosticTest(this.createDiagnosticHandlersProps());
+  }
+  
+  // Handle diagnostic quiz answer
+  async handleDiagnosticQuizAnswer(selectedOption: number, correct: boolean, diagnosticState: DiagnosticState) {
+    await handleDiagnosticQuizAnswer(selectedOption, correct, diagnosticState, this.createDiagnosticHandlersProps());
+  }
+  
+  // Handle complete diagnostic test
+  async handleCompleteDiagnosticTest(state: DiagnosticState) {
+    await handleCompleteDiagnosticTest(state, this.createDiagnosticHandlersProps());
+  }
+  
+  // Handle courses list
+  async handleCoursesList() {
+    await handleCoursesList(this.createCourseHandlersProps());
+  }
+  
+  // Handle start course
+  async handleStartCourse(courseId: string) {
+    await handleStartCourse(courseId, this.createCourseHandlersProps());
+  }
+  
+  // Handle navigate course page
+  async handleNavigateCoursePage(pageIndex: number) {
+    await handleNavigateCoursePage(pageIndex, this.createCourseHandlersProps());
+  }
+  
+  // Handle complete course
+  handleCompleteCourse(currentCourse: Course | null) {
+    handleCompleteCourse(currentCourse, this.createCourseHandlersProps());
+  }
+  
+  // Handle submit course quiz
+  async handleSubmitCourseQuiz(courseQuiz: CourseQuizState | null, courseQuizAnswers: CourseQuizAnswers) {
+    await handleSubmitCourseQuiz(courseQuiz, courseQuizAnswers, this.createCourseHandlersProps());
+  }
+  
+  // Handle quiz answer
+  async handleQuizAnswer(selectedOption: number, correct: boolean, currentQuiz: QuizQuestion | null) {
+    await handleQuizAnswer(selectedOption, correct, currentQuiz, this.createQuizHandlersProps());
+  }
+  
+  // Handle file upload
+  async handleFileUpload(files: FileList) {
+    await handleFileUpload(files, this.createFileHandlersProps());
+  }
+  
+  // Handle remove file
+  async handleRemoveFile(fileIndex: number) {
+    await handleRemoveFile(fileIndex, this.createFileHandlersProps());
+  }
+  
+  // Course quiz answer selection
+  handleCourseQuizAnswerSelection(questionIndex: number, selectedOption: number, courseQuizAnswers: CourseQuizAnswers) {
+    const newAnswers = handleCourseQuizAnswer(courseQuizAnswers, questionIndex, selectedOption);
+    this.setCourseQuizAnswers(newAnswers);
+  }
+  
+  // Course quiz navigation
+  handleCourseQuizNavigation(direction: 'next' | 'previous' | number, courseQuiz: CourseQuizState | null, courseQuizAnswers: CourseQuizAnswers) {
+    if (!courseQuiz) return;
+    
+    let newAnswers = courseQuizAnswers;
+    
+    if (direction === 'next') {
+      newAnswers = navigateToNextQuizQuestion(courseQuizAnswers, courseQuiz.questions.length);
+    } else if (direction === 'previous') {
+      newAnswers = navigateToPreviousQuizQuestion(courseQuizAnswers);
+    } else if (typeof direction === 'number') {
+      newAnswers = navigateToQuizQuestion(courseQuizAnswers, direction, courseQuiz.questions.length);
+    }
+    
+    this.setCourseQuizAnswers(newAnswers);
+  }
+}
+
 interface ChatWidgetProps {
   apiUrl?: string;
   position?: 'bottom-right' | 'bottom-left' | 'fullscreen';
@@ -130,27 +385,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   // UI State
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [inputValue, setInputValue] = useState('');
   const [activeMode, setActiveMode] = useState('chat');
   
   // Session State - using custom hook
   const { sessionIds, setSessionIds } = useSessionState();
   const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
-  
-  // Messages State
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  
-  // Quiz State
-  const [currentQuiz, setCurrentQuiz] = useState<QuizQuestion | null>(null);
-  const [showQuizFeedback, setShowQuizFeedback] = useState(false);
-  const [lastQuizAnswer, setLastQuizAnswer] = useState<QuizFeedback | null>(null);
-  
-  // Diagnostic State
-  const [diagnosticState, setDiagnosticState] = useState<DiagnosticState>(initializeDiagnosticState());
-  const [isDiagnosticMode, setIsDiagnosticMode] = useState(false);
-  const [showDiagnosticFeedback, setShowDiagnosticFeedback] = useState(false);
-  const [diagnosticFeedback, setDiagnosticFeedback] = useState<QuizFeedback | null>(null);
   
   // Command autocomplete state
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
@@ -164,25 +403,53 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     { command: 'chat', description: 'Start regular financial Q&A chat' }
   ];
   
-  // Course State
-  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
-  const [currentCourse, setCurrentCourse] = useState<Course | null>(null);
-  const [currentCoursePage, setCurrentCoursePage] = useState<CoursePage | null>(null);
-  const [showCourseList, setShowCourseList] = useState(false);
-  const [courseQuiz, setCourseQuiz] = useState<CourseQuizState | null>(null);
-  const [courseQuizAnswers, setCourseQuizAnswers] = useState<CourseQuizAnswers>(
-    initializeCourseQuizAnswers(0)
-  );
-  
-  // File Upload State
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress>(initializeUploadProgress());
-  
   // Window management state
   const [currentWindow, setCurrentWindow] = useState<'intro' | 'chat' | 'learn'>('intro');
 
+  // Window-specific state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [learnMessages, setLearnMessages] = useState<ChatMessage[]>([]);
+  const [chatInputValue, setChatInputValue] = useState('');
+  const [learnInputValue, setLearnInputValue] = useState('');
+  const [chatIsLoading, setChatIsLoading] = useState(false);
+  const [learnIsLoading, setLearnIsLoading] = useState(false);
+  
+  // Chat window specific state
+  const [chatCurrentQuiz, setChatCurrentQuiz] = useState<QuizQuestion | null>(null);
+  const [chatShowQuizFeedback, setChatShowQuizFeedback] = useState(false);
+  const [chatLastQuizAnswer, setChatLastQuizAnswer] = useState<QuizFeedback | null>(null);
+  const [chatDiagnosticState, setChatDiagnosticState] = useState<DiagnosticState>(initializeDiagnosticState());
+  const [chatIsDiagnosticMode, setChatIsDiagnosticMode] = useState(false);
+  const [chatShowDiagnosticFeedback, setChatShowDiagnosticFeedback] = useState(false);
+  const [chatDiagnosticFeedback, setChatDiagnosticFeedback] = useState<QuizFeedback | null>(null);
+  const [chatAvailableCourses, setChatAvailableCourses] = useState<Course[]>([]);
+  const [chatCurrentCourse, setChatCurrentCourse] = useState<Course | null>(null);
+  const [chatCurrentCoursePage, setChatCurrentCoursePage] = useState<CoursePage | null>(null);
+  const [chatShowCourseList, setChatShowCourseList] = useState(false);
+  const [chatCourseQuiz, setChatCourseQuiz] = useState<CourseQuizState | null>(null);
+  const [chatCourseQuizAnswers, setChatCourseQuizAnswers] = useState<CourseQuizAnswers>(initializeCourseQuizAnswers(0));
+  
+  // Learn window specific state
+  const [learnCurrentQuiz, setLearnCurrentQuiz] = useState<QuizQuestion | null>(null);
+  const [learnShowQuizFeedback, setLearnShowQuizFeedback] = useState(false);
+  const [learnLastQuizAnswer, setLearnLastQuizAnswer] = useState<QuizFeedback | null>(null);
+  const [learnDiagnosticState, setLearnDiagnosticState] = useState<DiagnosticState>(initializeDiagnosticState());
+  const [learnIsDiagnosticMode, setLearnIsDiagnosticMode] = useState(false);
+  const [learnShowDiagnosticFeedback, setLearnShowDiagnosticFeedback] = useState(false);
+  const [learnDiagnosticFeedback, setLearnDiagnosticFeedback] = useState<QuizFeedback | null>(null);
+  const [learnAvailableCourses, setLearnAvailableCourses] = useState<Course[]>([]);
+  const [learnCurrentCourse, setLearnCurrentCourse] = useState<Course | null>(null);
+  const [learnCurrentCoursePage, setLearnCurrentCoursePage] = useState<CoursePage | null>(null);
+  const [learnShowCourseList, setLearnShowCourseList] = useState(false);
+  const [learnCourseQuiz, setLearnCourseQuiz] = useState<CourseQuizState | null>(null);
+  const [learnCourseQuizAnswers, setLearnCourseQuizAnswers] = useState<CourseQuizAnswers>(initializeCourseQuizAnswers(0));
+  
+  // File Upload State (only for chat window)
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>(initializeUploadProgress());
+  
   // Custom hook for scroll to bottom
-  const messagesEndRef = useScrollToBottom([messages]);
+  const messagesEndRef = useScrollToBottom([chatMessages, learnMessages, currentWindow]);
 
   // Create API config
   const apiConfig: ApiConfig = {
@@ -190,6 +457,57 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     userId: sessionIds.userId,
     sessionId: sessionIds.sessionId
   };
+
+  // Create window instances
+  const chatWindow = new WindowInstance(
+    apiConfig,
+    sessionIds,
+    'chat',
+    (message) => setChatMessages(prev => [...prev, message]),
+    setChatInputValue,
+    setChatIsLoading,
+    setChatCurrentQuiz,
+    setChatShowQuizFeedback,
+    setChatLastQuizAnswer,
+    setChatDiagnosticState,
+    setChatIsDiagnosticMode,
+    setChatShowDiagnosticFeedback,
+    setChatDiagnosticFeedback,
+    setChatAvailableCourses,
+    setChatShowCourseList,
+    setChatCurrentCoursePage,
+    setChatCurrentCourse,
+    setChatCourseQuiz,
+    setChatCourseQuizAnswers,
+    setUploadedFiles,
+    setUploadProgress,
+    (pattern) => setChatMessages(prev => prev.filter(msg => !msg.content.includes(pattern)))
+  );
+
+  const learnWindow = new WindowInstance(
+    apiConfig,
+    sessionIds,
+    'learn',
+    (message) => setLearnMessages(prev => [...prev, message]),
+    setLearnInputValue,
+    setLearnIsLoading,
+    setLearnCurrentQuiz,
+    setLearnShowQuizFeedback,
+    setLearnLastQuizAnswer,
+    setLearnDiagnosticState,
+    setLearnIsDiagnosticMode,
+    setLearnShowDiagnosticFeedback,
+    setLearnDiagnosticFeedback,
+    setLearnAvailableCourses,
+    setLearnShowCourseList,
+    setLearnCurrentCoursePage,
+    setLearnCurrentCourse,
+    setLearnCourseQuiz,
+    setLearnCourseQuizAnswers,
+    () => {}, // No file upload for learn window
+    () => {}, // No upload progress for learn window
+    (pattern) => setLearnMessages(prev => prev.filter(msg => !msg.content.includes(pattern)))
+  );
 
   // Initialize session when widget opens
   useEffect(() => {
@@ -201,58 +519,132 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   // Session initialization
   const handleInitializeSession = async () => {
     try {
-      // Initialize quiz session only
-      // await initializeQuizSession(apiConfig);
-      
-      if (messages.length === 0) {
-        const welcomeMessage = createWelcomeMessage(
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        setMessages([welcomeMessage]);
-      }
+      // Initialize both windows with welcome messages
+      chatWindow.initializeWelcome();
+      learnWindow.initializeWelcome();
     } catch (error) {
       console.error('Session initialization error:', error);
-      if (messages.length === 0) {
-        const welcomeMessage = createWelcomeMessage(
-          sessionIds.sessionId,
-          sessionIds.userId,
-        );
-        setMessages([welcomeMessage]);
-      }
+      chatWindow.initializeWelcome();
+      learnWindow.initializeWelcome();
     }
   };
 
   // Message handling
   const addMessage = (message: ChatMessage) => {
-    setMessages(prev => [...prev, message]);
+    if (currentWindow === 'chat') {
+      setChatMessages(prev => [...prev, message]);
+    } else if (currentWindow === 'learn') {
+      setLearnMessages(prev => [...prev, message]);
+    }
+  };
+
+  // Get current window's messages
+  const getCurrentMessages = () => {
+    if (currentWindow === 'chat') {
+      return chatMessages;
+    } else if (currentWindow === 'learn') {
+      return learnMessages;
+    }
+    return [];
+  };
+
+  // Get current window's input value
+  const getCurrentInputValue = () => {
+    if (currentWindow === 'chat') {
+      return chatInputValue;
+    } else if (currentWindow === 'learn') {
+      return learnInputValue;
+    }
+    return '';
+  };
+
+  // Set current window's input value
+  const setCurrentInputValue = (value: string) => {
+    if (currentWindow === 'chat') {
+      setChatInputValue(value);
+    } else if (currentWindow === 'learn') {
+      setLearnInputValue(value);
+    }
+  };
+
+  // Get current window's loading state
+  const getCurrentIsLoading = () => {
+    if (currentWindow === 'chat') {
+      return chatIsLoading;
+    } else if (currentWindow === 'learn') {
+      return learnIsLoading;
+    }
+    return false;
+  };
+
+  // Set current window's loading state
+  const setCurrentIsLoading = (loading: boolean) => {
+    if (currentWindow === 'chat') {
+      setChatIsLoading(loading);
+    } else if (currentWindow === 'learn') {
+      setLearnIsLoading(loading);
+    }
   };
 
   // Close current displays (courses, quizzes, etc.) when a new command is executed
   const closeCurrentDisplays = () => {
-    setShowCourseList(false);
-    setCurrentCoursePage(null);
-    setCurrentCourse(null);
-    setCurrentQuiz(null);
-    setIsDiagnosticMode(false);
-    setShowDiagnosticFeedback(false);
-    setDiagnosticFeedback(null);
-    setShowQuizFeedback(false);
-    setLastQuizAnswer(null);
-    setCourseQuiz(null);
-    setCourseQuizAnswers(initializeCourseQuizAnswers(0));
-    setDiagnosticState(initializeDiagnosticState());
+    if (currentWindow === 'chat') {
+      chatWindow.closeCurrentDisplays();
+    } else if (currentWindow === 'learn') {
+      learnWindow.closeCurrentDisplays();
+    }
   };
 
   // Add a helper function to remove specific messages by content pattern
   const removeIntroMessage = (contentPattern: string) => {
-    setMessages(prev => prev.filter(msg => !msg.content.includes(contentPattern)));
+    if (currentWindow === 'chat') {
+      setChatMessages(prev => prev.filter(msg => !msg.content.includes(contentPattern)));
+    } else if (currentWindow === 'learn') {
+      setLearnMessages(prev => prev.filter(msg => !msg.content.includes(contentPattern)));
+    }
   };
 
   // Handle input changes for command autocomplete
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    setInputValue(value);
+    setCurrentInputValue(value);
+    
+    // Handle command autocomplete
+    if (value.startsWith('/')) {
+      const matchingCommands = availableCommands
+        .filter(cmd => cmd.command.toLowerCase().startsWith(value.toLowerCase()))
+        .map(cmd => cmd.command);
+      
+      setCommandSuggestions(matchingCommands);
+      setShowCommandSuggestions(matchingCommands.length > 0);
+    } else {
+      setShowCommandSuggestions(false);
+      setCommandSuggestions([]);
+    }
+  };
+
+  // Window-specific input change handlers
+  const handleChatInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setChatInputValue(value);
+    
+    // Handle command autocomplete
+    if (value.startsWith('/')) {
+      const matchingCommands = availableCommands
+        .filter(cmd => cmd.command.toLowerCase().startsWith(value.toLowerCase()))
+        .map(cmd => cmd.command);
+      
+      setCommandSuggestions(matchingCommands);
+      setShowCommandSuggestions(matchingCommands.length > 0);
+      } else {
+      setShowCommandSuggestions(false);
+      setCommandSuggestions([]);
+    }
+  };
+
+  const handleLearnInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setLearnInputValue(value);
     
     // Handle command autocomplete
     if (value.startsWith('/')) {
@@ -272,268 +664,79 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const handleCommandSelect = (command: string) => {
     console.log('Setting active mode to:', command); // Debug log
     setActiveMode(command);
-    setInputValue(command);
+    setCurrentInputValue(command);
     setShowCommandSuggestions(false);
     setCommandSuggestions([]);
     setShowCommandMenu(false);
     // Send the command directly instead of waiting for input value update
-    handleSendMessageWrapper(command);
-  };
-
-  // Wrapper functions for logic handlers
-  const handleSendMessageWrapper = async (commandText?: string) => {
-    const messageText = commandText || inputValue.trim();
-    if (!messageText) return;
-
-    const props: MessageHandlersProps = {
-        apiConfig,
-      sessionIds,
-      addMessage,
-      setInputValue,
-      setShowCommandSuggestions,
-      setCommandSuggestions,
-      setShowCommandMenu,
-      setIsLoading,
-      closeCurrentDisplays,
-      handleStartDiagnosticTestWrapper,
-      handleCoursesListWrapper,
-      setCurrentQuiz
-    };
-
-    await handleSendMessage(messageText, props);
-  };
-
-  const handleStartDiagnosticTestWrapper = async () => {
-    const props: DiagnosticHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setIsLoading,
-      closeCurrentDisplays,
-      setDiagnosticState,
-      setIsDiagnosticMode,
-      setShowDiagnosticFeedback,
-      setDiagnosticFeedback,
-      removeIntroMessage,
-      handleCompleteDiagnosticTestWrapper
-    };
-
-    await handleStartDiagnosticTest(props);
-  };
-
-  const handleDiagnosticQuizAnswerWrapper = async (selectedOption: number, correct: boolean) => {
-    const props: DiagnosticHandlersProps = {
-        apiConfig,
-      sessionIds,
-      addMessage,
-      setIsLoading,
-      closeCurrentDisplays,
-      setDiagnosticState,
-      setIsDiagnosticMode,
-      setShowDiagnosticFeedback,
-      setDiagnosticFeedback,
-      removeIntroMessage,
-      handleCompleteDiagnosticTestWrapper
-    };
-
-    await handleDiagnosticQuizAnswer(selectedOption, correct, diagnosticState, props);
-  };
-
-  const handleCompleteDiagnosticTestWrapper = async (state: DiagnosticState) => {
-    const props: DiagnosticHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setIsLoading,
-      closeCurrentDisplays,
-      setDiagnosticState,
-      setIsDiagnosticMode,
-      setShowDiagnosticFeedback,
-      setDiagnosticFeedback,
-      removeIntroMessage,
-      handleCompleteDiagnosticTestWrapper
-    };
-
-    await handleCompleteDiagnosticTest(state, props);
-  };
-
-  const handleCoursesListWrapper = async () => {
-    const props: CourseHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setIsLoading,
-      closeCurrentDisplays,
-      setAvailableCourses,
-      setShowCourseList,
-      setCurrentCoursePage,
-      setCurrentCourse,
-      setCourseQuiz,
-      setCourseQuizAnswers,
-      removeIntroMessage
-    };
-
-    await handleCoursesList(props);
-  };
-
-  const handleStartCourseWrapper = async (courseId: string) => {
-    const props: CourseHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setIsLoading,
-      closeCurrentDisplays,
-      setAvailableCourses,
-      setShowCourseList,
-      setCurrentCoursePage,
-      setCurrentCourse,
-      setCourseQuiz,
-      setCourseQuizAnswers,
-      removeIntroMessage
-    };
-
-    await handleStartCourse(courseId, props);
-  };
-
-  const handleNavigateCoursePageWrapper = async (pageIndex: number) => {
-    const props: CourseHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setIsLoading,
-      closeCurrentDisplays,
-      setAvailableCourses,
-      setShowCourseList,
-      setCurrentCoursePage,
-      setCurrentCourse,
-      setCourseQuiz,
-      setCourseQuizAnswers,
-      removeIntroMessage
-    };
-
-    await handleNavigateCoursePage(pageIndex, props);
-  };
-
-  const handleCompleteCourseWrapper = () => {
-    const props: CourseHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setIsLoading,
-      closeCurrentDisplays,
-      setAvailableCourses,
-      setShowCourseList,
-      setCurrentCoursePage,
-      setCurrentCourse,
-      setCourseQuiz,
-      setCourseQuizAnswers,
-      removeIntroMessage
-    };
-
-    handleCompleteCourse(currentCourse, props);
-  };
-
-  const handleSubmitCourseQuizWrapper = async () => {
-    const props: CourseHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setIsLoading,
-      closeCurrentDisplays,
-      setAvailableCourses,
-      setShowCourseList,
-      setCurrentCoursePage,
-      setCurrentCourse,
-      setCourseQuiz,
-      setCourseQuizAnswers,
-      removeIntroMessage
-    };
-
-    await handleSubmitCourseQuiz(courseQuiz, courseQuizAnswers, props);
-  };
-
-  const handleQuizAnswerWrapper = async (selectedOption: number, correct: boolean) => {
-    const props: QuizHandlersProps = {
-      apiConfig,
-      setLastQuizAnswer,
-      setShowQuizFeedback,
-      setCurrentQuiz
-    };
-
-    await handleQuizAnswer(selectedOption, correct, currentQuiz, props);
-  };
-
-  const handleFileUploadWrapper = async (files: FileList) => {
-    const props: FileHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setUploadedFiles,
-      setUploadProgress,
-      uploadedFiles
-    };
-
-    await handleFileUpload(files, props);
-  };
-
-  const handleRemoveFileWrapper = async (fileIndex: number) => {
-    const props: FileHandlersProps = {
-      apiConfig,
-      sessionIds,
-      addMessage,
-      setUploadedFiles,
-      setUploadProgress,
-      uploadedFiles
-    };
-
-    await handleRemoveFile(fileIndex, props);
-  };
-
-  // Course quiz functions
-  const handleCourseQuizAnswerSelection = (questionIndex: number, selectedOption: number) => {
-    const newAnswers = handleCourseQuizAnswer(courseQuizAnswers, questionIndex, selectedOption);
-    setCourseQuizAnswers(newAnswers);
-  };
-
-  const handleCourseQuizNavigation = (direction: 'next' | 'previous' | number) => {
-    if (!courseQuiz) return;
-    
-    let newAnswers = courseQuizAnswers;
-    
-    if (direction === 'next') {
-      newAnswers = navigateToNextQuizQuestion(courseQuizAnswers, courseQuiz.questions.length);
-    } else if (direction === 'previous') {
-      newAnswers = navigateToPreviousQuizQuestion(courseQuizAnswers);
-    } else if (typeof direction === 'number') {
-      newAnswers = navigateToQuizQuestion(courseQuizAnswers, direction, courseQuiz.questions.length);
+    if (currentWindow === 'chat') {
+      chatWindow.handleSendMessage(command);
+    } else if (currentWindow === 'learn') {
+      learnWindow.handleSendMessage(command);
     }
-    
-    setCourseQuizAnswers(newAnswers);
   };
 
-  const hasDiagnosticTest = diagnosticState.test && diagnosticState.test.questions.length > 0;
-  const currentDiagnosticQuiz = hasDiagnosticTest ? diagnosticState.test!.questions[diagnosticState.currentQuestionIndex] : null;
-  const currentDiagnosticQuestionIndex = hasDiagnosticTest ? diagnosticState.currentQuestionIndex : 0;
-  const diagnosticTotalQuestions = diagnosticState.test ? diagnosticState.test.questions.length : 0;
-
-  // Navigation functions
-  const navigateToChat = () => {
-    console.log('navigateToChat called');
-    setCurrentWindow('chat');
-    closeCurrentDisplays();
+  // Window-specific message handlers
+  const handleChatSendMessage = async (commandText?: string) => {
+    const messageText = commandText || chatInputValue.trim();
+    if (!messageText) return;
+    await chatWindow.handleSendMessage(messageText);
   };
 
-  const navigateToLearn = () => {
-    console.log('navigateToLearn called');
-    setCurrentWindow('learn');
-    closeCurrentDisplays();
+  const handleLearnSendMessage = async (commandText?: string) => {
+    const messageText = commandText || learnInputValue.trim();
+    if (!messageText) return;
+    await learnWindow.handleSendMessage(messageText);
   };
 
-  const navigateToIntro = () => {
-    console.log('navigateToIntro called');
-    setCurrentWindow('intro');
-    closeCurrentDisplays();
-  };
+  // Window-specific wrapper functions for components
+  const handleChatStartDiagnosticTest = () => chatWindow.handleStartDiagnosticTest();
+  const handleChatDiagnosticQuizAnswer = (selectedOption: number, correct: boolean) => 
+    chatWindow.handleDiagnosticQuizAnswer(selectedOption, correct, chatDiagnosticState);
+  const handleChatCompleteDiagnosticTest = (state: DiagnosticState) => 
+    chatWindow.handleCompleteDiagnosticTest(state);
+  const handleChatCoursesList = () => chatWindow.handleCoursesList();
+  const handleChatStartCourse = (courseId: string) => chatWindow.handleStartCourse(courseId);
+  const handleChatNavigateCoursePage = (pageIndex: number) => chatWindow.handleNavigateCoursePage(pageIndex);
+  const handleChatCompleteCourse = () => chatWindow.handleCompleteCourse(chatCurrentCourse);
+  const handleChatSubmitCourseQuiz = () => chatWindow.handleSubmitCourseQuiz(chatCourseQuiz, chatCourseQuizAnswers);
+  const handleChatQuizAnswer = (selectedOption: number, correct: boolean) => 
+    chatWindow.handleQuizAnswer(selectedOption, correct, chatCurrentQuiz);
+  const handleChatFileUpload = (files: FileList) => chatWindow.handleFileUpload(files);
+  const handleChatRemoveFile = (fileIndex: number) => chatWindow.handleRemoveFile(fileIndex);
+  const handleChatCourseQuizAnswerSelection = (questionIndex: number, selectedOption: number) => 
+    chatWindow.handleCourseQuizAnswerSelection(questionIndex, selectedOption, chatCourseQuizAnswers);
+  const handleChatCourseQuizNavigation = (direction: 'next' | 'previous' | number) => 
+    chatWindow.handleCourseQuizNavigation(direction, chatCourseQuiz, chatCourseQuizAnswers);
+
+  const handleLearnStartDiagnosticTest = () => learnWindow.handleStartDiagnosticTest();
+  const handleLearnDiagnosticQuizAnswer = (selectedOption: number, correct: boolean) => 
+    learnWindow.handleDiagnosticQuizAnswer(selectedOption, correct, learnDiagnosticState);
+  const handleLearnCompleteDiagnosticTest = (state: DiagnosticState) => 
+    learnWindow.handleCompleteDiagnosticTest(state);
+  const handleLearnCoursesList = () => learnWindow.handleCoursesList();
+  const handleLearnStartCourse = (courseId: string) => learnWindow.handleStartCourse(courseId);
+  const handleLearnNavigateCoursePage = (pageIndex: number) => learnWindow.handleNavigateCoursePage(pageIndex);
+  const handleLearnCompleteCourse = () => learnWindow.handleCompleteCourse(learnCurrentCourse);
+  const handleLearnSubmitCourseQuiz = () => learnWindow.handleSubmitCourseQuiz(learnCourseQuiz, learnCourseQuizAnswers);
+  const handleLearnQuizAnswer = (selectedOption: number, correct: boolean) => 
+    learnWindow.handleQuizAnswer(selectedOption, correct, learnCurrentQuiz);
+  const handleLearnCourseQuizAnswerSelection = (questionIndex: number, selectedOption: number) => 
+    learnWindow.handleCourseQuizAnswerSelection(questionIndex, selectedOption, learnCourseQuizAnswers);
+  const handleLearnCourseQuizNavigation = (direction: 'next' | 'previous' | number) => 
+    learnWindow.handleCourseQuizNavigation(direction, learnCourseQuiz, learnCourseQuizAnswers);
+
+  // Chat window diagnostic variables
+  const hasChatDiagnosticTest = chatDiagnosticState.test && chatDiagnosticState.test.questions.length > 0;
+  const chatCurrentDiagnosticQuiz = hasChatDiagnosticTest ? chatDiagnosticState.test!.questions[chatDiagnosticState.currentQuestionIndex] : null;
+  const chatCurrentDiagnosticQuestionIndex = hasChatDiagnosticTest ? chatDiagnosticState.currentQuestionIndex : 0;
+  const chatDiagnosticTotalQuestions = chatDiagnosticState.test ? chatDiagnosticState.test.questions.length : 0;
+
+  // Learn window diagnostic variables
+  const hasLearnDiagnosticTest = learnDiagnosticState.test && learnDiagnosticState.test.questions.length > 0;
+  const learnCurrentDiagnosticQuiz = hasLearnDiagnosticTest ? learnDiagnosticState.test!.questions[learnDiagnosticState.currentQuestionIndex] : null;
+  const learnCurrentDiagnosticQuestionIndex = hasLearnDiagnosticTest ? learnDiagnosticState.currentQuestionIndex : 0;
+  const learnDiagnosticTotalQuestions = learnDiagnosticState.test ? learnDiagnosticState.test.questions.length : 0;
 
   if (!isOpen) {
     return (
@@ -575,21 +778,22 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         {/* Uploaded Files Display Component */}
         <UploadedFilesDisplay 
           uploadedFiles={uploadedFiles}
-          onRemoveFile={handleRemoveFileWrapper}
+          onRemoveFile={() => {}}
         />
 
         {/* Windows Component */}
         <Windows
           currentWindow={currentWindow}
-          onNavigateToChat={navigateToChat}
-          onNavigateToLearn={navigateToLearn}
-          onNavigateToIntro={navigateToIntro}
+          onNavigateToChat={() => setCurrentWindow('chat')}
+          onNavigateToLearn={() => setCurrentWindow('learn')}
+          onNavigateToIntro={() => setCurrentWindow('intro')}
           isExpanded={isExpanded}
           hasUploads={uploadProgress.isUploading || uploadedFiles.length > 0}
-        >
-          {/* Chat Window Content */}
+          chatChildren={
+            <>
+              {/* Chat Window Content */}
         <div className="chat-messages">
-          {messages.map((message) => (
+                {chatMessages.map((message) => (
             <div key={message.id} className={`message ${message.type}`}>
               <div className="message-content">
                 {formatMessageContent(message.content)}
@@ -613,49 +817,49 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           
           {/* Diagnostic Test Component */}
           <DiagnosticTest
-            isDiagnosticMode={isDiagnosticMode}
-              currentQuiz={currentDiagnosticQuiz}
-            showDiagnosticFeedback={showDiagnosticFeedback}
-            diagnosticFeedback={diagnosticFeedback}
-              diagnosticQuestionIndex={currentDiagnosticQuestionIndex}
-            diagnosticTotalQuestions={diagnosticTotalQuestions}
-              onDiagnosticQuizAnswer={handleDiagnosticQuizAnswerWrapper}
+                  isDiagnosticMode={chatIsDiagnosticMode}
+                  currentQuiz={chatCurrentDiagnosticQuiz}
+                  showDiagnosticFeedback={chatShowDiagnosticFeedback}
+                  diagnosticFeedback={chatDiagnosticFeedback}
+                  diagnosticQuestionIndex={chatCurrentDiagnosticQuestionIndex}
+                  diagnosticTotalQuestions={chatDiagnosticTotalQuestions}
+                  onDiagnosticQuizAnswer={handleChatDiagnosticQuizAnswer}
           />
 
           {/* Quiz Component */}
           <Quiz
-            currentQuiz={currentQuiz}
-            showQuizFeedback={showQuizFeedback}
-            lastQuizAnswer={lastQuizAnswer}
-            isDiagnosticMode={isDiagnosticMode}
-              onQuizAnswer={handleQuizAnswerWrapper}
+                  currentQuiz={chatCurrentQuiz}
+                  showQuizFeedback={chatShowQuizFeedback}
+                  lastQuizAnswer={chatLastQuizAnswer}
+                  isDiagnosticMode={chatIsDiagnosticMode}
+                  onQuizAnswer={handleChatQuizAnswer}
           />
 
           {/* Course List Component */}
           <CourseList
-            showCourseList={showCourseList}
-            availableCourses={availableCourses}
-              onStartCourse={handleStartCourseWrapper}
+                  showCourseList={chatShowCourseList}
+                  availableCourses={chatAvailableCourses}
+                  onStartCourse={handleChatStartCourse}
           />
 
           {/* Course Page Component */}
           <CoursePageComponent
-            currentCoursePage={currentCoursePage}
-              onNavigateCoursePage={handleNavigateCoursePageWrapper}
-              onCompleteCourse={handleCompleteCourseWrapper}
+                  currentCoursePage={chatCurrentCoursePage}
+                  onNavigateCoursePage={handleChatNavigateCoursePage}
+                  onCompleteCourse={handleChatCompleteCourse}
           />
 
           {/* Course Quiz Component */}
           <CourseQuiz
-            courseQuiz={courseQuiz}
-            courseQuizAnswers={courseQuizAnswers}
-            onCourseQuizAnswerSelection={handleCourseQuizAnswerSelection}
-            onCourseQuizNavigation={handleCourseQuizNavigation}
-              onSubmitCourseQuiz={handleSubmitCourseQuizWrapper}
-            areAllQuestionsAnswered={areAllQuestionsAnswered}
-          />
-          
-          {isLoading && (
+                  courseQuiz={chatCourseQuiz}
+                  courseQuizAnswers={chatCourseQuizAnswers}
+                  onCourseQuizAnswerSelection={handleChatCourseQuizAnswerSelection}
+                  onCourseQuizNavigation={handleChatCourseQuizNavigation}
+                  onSubmitCourseQuiz={handleChatSubmitCourseQuiz}
+                  areAllQuestionsAnswered={(answers) => areAllQuestionsAnswered(answers)}
+                />
+                
+                {chatIsLoading && (
             <div className="message assistant">
               <div className="message-content">Thinking...</div>
             </div>
@@ -666,23 +870,115 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
         {/* Chat Input Component */}
         <ChatInput
-          inputValue={inputValue}
-          isLoading={isLoading}
+                inputValue={chatInputValue}
+                isLoading={chatIsLoading}
           uploadProgress={uploadProgress}
           showCommandSuggestions={showCommandSuggestions}
           commandSuggestions={commandSuggestions}
           showCommandMenu={showCommandMenu}
           availableCommands={availableCommands}
           activeMode={activeMode}
-          onInputChange={handleInputChange}
-            onSendMessage={handleSendMessageWrapper}
-            onFileUpload={handleFileUploadWrapper}
+                onInputChange={handleChatInputChange}
+                onSendMessage={handleChatSendMessage}
+                onFileUpload={handleChatFileUpload}
           onCommandSelect={handleCommandSelect}
           onToggleCommandMenu={() => setShowCommandMenu(!showCommandMenu)}
           onCloseCommandMenu={() => setShowCommandMenu(false)}
-            disabled={currentWindow === 'intro'}
+                disabled={currentWindow === 'intro'}
+              />
+            </>
+          }
+          learnChildren={
+            <>
+              {/* Learn Window Content */}
+              <div className="chat-messages">
+                {learnMessages.map((message) => (
+                  <div key={message.id} className={`message ${message.type}`}>
+                    <div className="message-content">
+                      {formatMessageContent(message.content)}
+                    </div>
+                    {/* Display buttons if present */}
+                    {message.metadata?.buttons && (
+                      <MessageButtons buttons={message.metadata.buttons} />
+                    )}
+                    {/* Display calculation result if present */}
+                    {message.metadata?.calculationResult && (
+                      <CalculationResult result={message.metadata.calculationResult} />
+                    )}
+                    <div className="message-time">
+                      {new Date(message.timestamp).toLocaleTimeString([], { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Learn Diagnostic Test Component */}
+                <DiagnosticTest
+                  isDiagnosticMode={learnIsDiagnosticMode}
+                  currentQuiz={learnCurrentDiagnosticQuiz}
+                  showDiagnosticFeedback={learnShowDiagnosticFeedback}
+                  diagnosticFeedback={learnDiagnosticFeedback}
+                  diagnosticQuestionIndex={learnCurrentDiagnosticQuestionIndex}
+                  diagnosticTotalQuestions={learnDiagnosticTotalQuestions}
+                  onDiagnosticQuizAnswer={handleLearnDiagnosticQuizAnswer}
+                />
+
+                {/* Learn Quiz Component */}
+                <Quiz
+                  currentQuiz={learnCurrentQuiz}
+                  showQuizFeedback={learnShowQuizFeedback}
+                  lastQuizAnswer={learnLastQuizAnswer}
+                  isDiagnosticMode={learnIsDiagnosticMode}
+                  onQuizAnswer={handleLearnQuizAnswer}
+                />
+
+                {/* Learn Course List Component */}
+                <CourseList
+                  showCourseList={learnShowCourseList}
+                  availableCourses={learnAvailableCourses}
+                  onStartCourse={handleLearnStartCourse}
+                />
+
+                {/* Learn Course Page Component */}
+                <CoursePageComponent
+                  currentCoursePage={learnCurrentCoursePage}
+                  onNavigateCoursePage={handleLearnNavigateCoursePage}
+                  onCompleteCourse={handleLearnCompleteCourse}
+                />
+
+                {/* Learn Course Quiz Component */}
+                <CourseQuiz
+                  courseQuiz={learnCourseQuiz}
+                  courseQuizAnswers={learnCourseQuizAnswers}
+                  onCourseQuizAnswerSelection={handleLearnCourseQuizAnswerSelection}
+                  onCourseQuizNavigation={handleLearnCourseQuizNavigation}
+                  onSubmitCourseQuiz={handleLearnSubmitCourseQuiz}
+                  areAllQuestionsAnswered={(answers) => areAllQuestionsAnswered(answers)}
+                />
+                
+                {learnIsLoading && (
+                  <div className="message assistant">
+                    <div className="message-content">Thinking...</div>
+                  </div>
+                )}
+                
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Learn Command Input Component */}
+              <CommandInput
+                showCommandMenu={showCommandMenu}
+                availableCommands={availableCommands}
+                activeMode={activeMode}
+                onCommandSelect={handleCommandSelect}
+                onToggleCommandMenu={() => setShowCommandMenu(!showCommandMenu)}
+                disabled={false}
+              />
+            </>
+          }
         />
-        </Windows>
       </div>
     </div>
   );

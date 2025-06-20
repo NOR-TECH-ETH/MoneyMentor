@@ -5,7 +5,8 @@ interface WindowsProps {
   onNavigateToChat: () => void;
   onNavigateToLearn: () => void;
   onNavigateToIntro: () => void;
-  children: React.ReactNode;
+  chatChildren: React.ReactNode;
+  learnChildren: React.ReactNode;
   isExpanded?: boolean;
   hasUploads?: boolean;
 }
@@ -15,7 +16,8 @@ export const Windows: React.FC<WindowsProps> = ({
   onNavigateToChat,
   onNavigateToLearn,
   onNavigateToIntro,
-  children,
+  chatChildren,
+  learnChildren,
   isExpanded = false,
   hasUploads = false
 }) => {
@@ -217,16 +219,13 @@ export const Windows: React.FC<WindowsProps> = ({
 
       {currentWindow === 'chat' && (
         <div className="chat-window">
-          {children}
+          {chatChildren}
         </div>
       )}
 
       {currentWindow === 'learn' && (
-        <div className="learn-window">
-          <div className="learn-content">
-            <h2>📚 Learning Center</h2>
-            <p>Structured learning content coming soon!</p>
-          </div>
+        <div className="chat-window">
+          {learnChildren}
         </div>
       )}
     </>
