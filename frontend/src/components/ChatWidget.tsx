@@ -56,6 +56,7 @@ import {
   // API utilities
   ApiConfig,
   sendChatMessage,
+  generateDiagnosticQuiz,
   initializeQuizSession,
   loadDiagnosticTest,
   startDiagnosticTest,
@@ -396,6 +397,12 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [commandSuggestions, setCommandSuggestions] = useState<string[]>([]);
   const [showCommandMenu, setShowCommandMenu] = useState(true);
   
+  // Message counter for chat window
+  const [chatMessageCount, setChatMessageCount] = useState(0);
+  // Quiz answer counters for chat window
+  const [chatQuizTotalAnswered, setChatQuizTotalAnswered] = useState(0);
+  const [chatQuizCorrectAnswered, setChatQuizCorrectAnswered] = useState(0);
+  
   // Available commands
   const availableCommands = [
     { command: 'diagnostic_test', description: 'Take a quick financial knowledge assessment' },
@@ -617,7 +624,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       
       setCommandSuggestions(matchingCommands);
       setShowCommandSuggestions(matchingCommands.length > 0);
-    } else {
+      } else {
       setShowCommandSuggestions(false);
       setCommandSuggestions([]);
     }
@@ -628,18 +635,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     const value = e.target.value;
     setChatInputValue(value);
     
-    // Handle command autocomplete
-    if (value.startsWith('/')) {
-      const matchingCommands = availableCommands
-        .filter(cmd => cmd.command.toLowerCase().startsWith(value.toLowerCase()))
-        .map(cmd => cmd.command);
-      
-      setCommandSuggestions(matchingCommands);
-      setShowCommandSuggestions(matchingCommands.length > 0);
-      } else {
-      setShowCommandSuggestions(false);
-      setCommandSuggestions([]);
-    }
+    // Chat window doesn't process commands - just update input value
   };
 
   const handleLearnInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -669,18 +665,94 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setCommandSuggestions([]);
     setShowCommandMenu(false);
     // Send the command directly instead of waiting for input value update
-    if (currentWindow === 'chat') {
-      chatWindow.handleSendMessage(command);
-    } else if (currentWindow === 'learn') {
+    if (currentWindow === 'learn') {
       learnWindow.handleSendMessage(command);
     }
+    // Chat window doesn't process commands
   };
 
   // Window-specific message handlers
   const handleChatSendMessage = async (commandText?: string) => {
     const messageText = commandText || chatInputValue.trim();
     if (!messageText) return;
-    await chatWindow.handleSendMessage(messageText);
+    
+    // For chat window, always send to chat API and increment counter
+    setChatIsLoading(true);
+    setChatInputValue('');
+    
+    try {
+      // Add user message to chat
+      const userMessage = createUserMessage(
+        messageText,
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      setChatMessages(prev => [...prev, userMessage]);
+      
+      // Increment message counter
+      const newMessageCount = chatMessageCount + 1;
+      setChatMessageCount(newMessageCount);
+      
+      // Send to chat API
+      const response = await sendChatMessage(apiConfig, messageText);
+      
+      // Handle backend response
+      if (response.message) {
+        const assistantMessage = createAssistantMessage(
+          response.message,
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+        setChatMessages(prev => [...prev, assistantMessage]);
+        
+        // Handle quiz if present
+        if (response.quiz) {
+          setChatCurrentQuiz(response.quiz);
+        }
+      } else {
+      const errorMessage = createSystemMessage(
+          'Sorry, I encountered an error. Please try again.',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+        setChatMessages(prev => [...prev, errorMessage]);
+      }
+      
+      // Check if we need to generate a quiz (after 3 user messages)
+      if (newMessageCount >= 3) {
+        try {
+          const quizResponse = await generateDiagnosticQuiz(apiConfig);
+          const quizMessage = createSystemMessage(
+            `🎯 **Knowledge Check!**\n\nI've generated a quick quiz based on our conversation. Let's test your understanding!`,
+          sessionIds.sessionId,
+          sessionIds.userId
+        );
+          setChatMessages(prev => [...prev, quizMessage]);
+          
+          // Set the quiz
+          if (quizResponse.questions.length > 0) {
+            setChatCurrentQuiz(quizResponse.questions[0]);
+          }
+          
+          // Reset counter after generating quiz
+          setChatMessageCount(0);
+        } catch (quizError) {
+          console.error('Quiz generation error:', quizError);
+          // Don't show error to user, just continue with chat
+        }
+      }
+      
+    } catch (error) {
+      console.error('Chat error:', error);
+      const errorMessage = createSystemMessage(
+        'Network error. Please check your connection.',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      setChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setChatIsLoading(false);
+    }
   };
 
   const handleLearnSendMessage = async (commandText?: string) => {
@@ -700,8 +772,32 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const handleChatNavigateCoursePage = (pageIndex: number) => chatWindow.handleNavigateCoursePage(pageIndex);
   const handleChatCompleteCourse = () => chatWindow.handleCompleteCourse(chatCurrentCourse);
   const handleChatSubmitCourseQuiz = () => chatWindow.handleSubmitCourseQuiz(chatCourseQuiz, chatCourseQuizAnswers);
-  const handleChatQuizAnswer = (selectedOption: number, correct: boolean) => 
-    chatWindow.handleQuizAnswer(selectedOption, correct, chatCurrentQuiz);
+  const handleChatQuizAnswer = (selectedOption: number, correct: boolean) => {
+    // Increment total answered
+    setChatQuizTotalAnswered(prev => prev + 1);
+    // Increment correct answered if correct
+    if (correct) setChatQuizCorrectAnswered(prev => prev + 1);
+
+    // Build feedback string
+    const feedbackTitle = correct ? '🎉 Excellent! You got it right!' : '🤔 Good Try! Here\'s what you should know:';
+    const feedbackExplanation = chatCurrentQuiz?.explanation || '';
+    const feedbackContent = `${feedbackTitle}\n\n💡 ${feedbackExplanation}`;
+
+    // Add feedback as a normal assistant message
+    setChatMessages(prev => [
+      ...prev,
+      createAssistantMessage(
+        feedbackContent,
+        sessionIds.sessionId,
+        sessionIds.userId
+      )
+    ]);
+
+    // Clear quiz/feedback state
+    setChatShowQuizFeedback(false);
+    setChatLastQuizAnswer(null);
+    setChatCurrentQuiz(null);
+  };
   const handleChatFileUpload = (files: FileList) => chatWindow.handleFileUpload(files);
   const handleChatRemoveFile = (fileIndex: number) => chatWindow.handleRemoveFile(fileIndex);
   const handleChatCourseQuizAnswerSelection = (questionIndex: number, selectedOption: number) => 
@@ -756,6 +852,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       <div className={`chat-widget ${theme} ${isExpanded ? 'expanded' : ''}`}>
         <div className="chat-header">
           <h3>💰 MoneyMentor</h3>
+          {currentWindow === 'chat' && (
+            <div className="quiz-progress-simple">
+              <span className="quiz-progress-simple-text">
+                {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
+              </span>
+            </div>
+          )}
           <div className="chat-header-buttons">
             <button 
               onClick={() => setIsExpanded(!isExpanded)}
@@ -873,17 +976,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                 inputValue={chatInputValue}
                 isLoading={chatIsLoading}
           uploadProgress={uploadProgress}
-          showCommandSuggestions={showCommandSuggestions}
-          commandSuggestions={commandSuggestions}
-          showCommandMenu={showCommandMenu}
-          availableCommands={availableCommands}
+          showCommandSuggestions={false}
+          commandSuggestions={[]}
+          showCommandMenu={false}
+          availableCommands={[]}
           activeMode={activeMode}
                 onInputChange={handleChatInputChange}
                 onSendMessage={handleChatSendMessage}
                 onFileUpload={handleChatFileUpload}
-          onCommandSelect={handleCommandSelect}
-          onToggleCommandMenu={() => setShowCommandMenu(!showCommandMenu)}
-          onCloseCommandMenu={() => setShowCommandMenu(false)}
+          onCommandSelect={() => {}}
+          onToggleCommandMenu={() => {}}
+          onCloseCommandMenu={() => {}}
                 disabled={currentWindow === 'intro'}
               />
             </>
@@ -969,11 +1072,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
               {/* Learn Command Input Component */}
               <CommandInput
-                showCommandMenu={showCommandMenu}
-                availableCommands={availableCommands}
-                activeMode={activeMode}
-                onCommandSelect={handleCommandSelect}
-                onToggleCommandMenu={() => setShowCommandMenu(!showCommandMenu)}
+          showCommandMenu={showCommandMenu}
+          availableCommands={availableCommands}
+          activeMode={activeMode}
+          onCommandSelect={handleCommandSelect}
+          onToggleCommandMenu={() => setShowCommandMenu(!showCommandMenu)}
                 disabled={false}
               />
             </>
