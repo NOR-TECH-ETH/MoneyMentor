@@ -380,7 +380,7 @@ interface ChatWidgetProps {
 }
 
 export const ChatWidget: React.FC<ChatWidgetProps> = ({
-  apiUrl = 'http://localhost:3000',
+  apiUrl = 'https://backend-2-647308514289.us-central1.run.app',
   position = 'bottom-right',
   theme = 'light'
 }) => {

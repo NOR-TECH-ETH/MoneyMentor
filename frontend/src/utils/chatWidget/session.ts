@@ -29,7 +29,7 @@ export const initializeSession = (): SessionIds => {
  * Generate a new session ID and store it
  */
 export const generateNewSession = async (): Promise<string> => {
-  const response = await fetch('http://localhost:8000/api/quiz/session/', {
+  const response = await fetch('https://backend-647308514289.us-central1.run.app/api/quiz/session/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });

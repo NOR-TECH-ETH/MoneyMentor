@@ -9,7 +9,7 @@ function DemoApp() {
 
   return (
     <ChatWidget
-      apiUrl="http://localhost:3000"
+      apiUrl="https://backend-2-647308514289.us-central1.run.app"
       position="bottom-right"
       theme="light"
     />
@@ -36,7 +36,7 @@ export function initMoneyMentorWidget(config?: {
   containerId?: string;
 }) {
   const {
-    apiUrl = 'http://localhost:3000',
+    apiUrl = 'https://backend-2-647308514289.us-central1.run.app',
     position = 'bottom-right',
     theme = 'light',
     containerId = 'money-mentor-widget'
