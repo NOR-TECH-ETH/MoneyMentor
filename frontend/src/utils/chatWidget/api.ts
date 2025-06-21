@@ -1,4 +1,4 @@
-import { ChatResponse, DiagnosticTest, QuizSession } from '../../types';
+import { ChatResponse, DiagnosticTest, QuizSession, QuizQuestion } from '../../types';
 
 export interface ApiConfig {
   apiUrl: string;
@@ -6,12 +6,16 @@ export interface ApiConfig {
   sessionId: string;
 }
 
+// Get environment variables
+const BACKEND_URL = import.meta.env.VITE_BACKEND;
+const BACKEND_TWO_URL = import.meta.env.VITE_BACKEND_TWO;
+
 // Chat API calls - Using port 8000
 export const sendChatMessage = async (
   config: ApiConfig,
   message: string
 ): Promise<ChatResponse> => {
-  const response = await fetch(`http://localhost:8000/api/chat/message`, {
+  const response = await fetch(`${BACKEND_URL}/api/chat/message`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -33,7 +37,7 @@ export const sendChatMessage = async (
 export const initializeQuizSession = async (
   config: ApiConfig
 ): Promise<QuizSession> => {
-  const response = await fetch(`http://localhost:3000/api/quiz/session`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -53,10 +57,32 @@ export const initializeQuizSession = async (
 export const loadDiagnosticTest = async (
   apiUrl: string
 ): Promise<DiagnosticTest> => {
-  const response = await fetch(`http://localhost:3000/api/quiz/diagnostic`);
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/diagnostic`);
   
   if (!response.ok) {
     throw new Error('Failed to load diagnostic test');
+  }
+
+  const data = await response.json();
+  return data.data;
+};
+
+export const completeDiagnosticTest = async (
+  config: ApiConfig,
+  score: number
+): Promise<any> => {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/complete-diagnostic`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      userId: config.userId, 
+      sessionId: config.sessionId, 
+      score 
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to complete diagnostic test');
   }
 
   const data = await response.json();
@@ -70,7 +96,7 @@ export const logQuizAnswer = async (
   correct: boolean,
   topicTag: string
 ): Promise<void> => {
-  const response = await fetch(`http://localhost:3000/api/quiz/log`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/log`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -91,33 +117,11 @@ export const logQuizAnswer = async (
   }
 };
 
-export const completeDiagnosticTest = async (
-  config: ApiConfig,
-  score: number
-): Promise<any> => {
-  const response = await fetch(`http://localhost:3000/api/quiz/complete-diagnostic`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      userId: config.userId, 
-      sessionId: config.sessionId, 
-      score 
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to complete diagnostic test');
-  }
-
-  const data = await response.json();
-  return data.data;
-};
-
 // Course API calls - Using port 3000
 export const getAvailableCourses = async (
   config: ApiConfig
 ): Promise<any> => {
-  const response = await fetch(`http://localhost:3000/api/chat/courses?userId=${config.userId}&sessionId=${config.sessionId}`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/courses?userId=${config.userId}&sessionId=${config.sessionId}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -134,7 +138,7 @@ export const startCourse = async (
   config: ApiConfig,
   courseId: string
 ): Promise<any> => {
-  const response = await fetch(`http://localhost:3000/api/chat/course/start`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -155,7 +159,7 @@ export const navigateCoursePage = async (
   config: ApiConfig,
   pageIndex: number
 ): Promise<any> => {
-  const response = await fetch(`http://localhost:3000/api/chat/course/navigate`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/navigate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -175,7 +179,7 @@ export const submitCourseQuiz = async (
   config: ApiConfig,
   answers: number[]
 ): Promise<any> => {
-  const response = await fetch(`http://localhost:3000/api/chat/course/quiz`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/quiz`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -201,7 +205,7 @@ export const uploadFile = async (
   formData.append('userId', config.userId);
   formData.append('sessionId', config.sessionId);
 
-  const response = await fetch(`http://localhost:3000/api/content/upload`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/content/upload`, {
     method: 'POST',
     body: formData,
   });
@@ -218,7 +222,7 @@ export const removeFile = async (
   config: ApiConfig,
   fileName: string
 ): Promise<void> => {
-  const response = await fetch(`http://localhost:3000/api/content/remove`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/content/remove`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -237,7 +241,7 @@ export const removeFile = async (
 export const startDiagnosticTest = async (
   config: ApiConfig
 ): Promise<any> => {
-  const response = await fetch(`http://localhost:3000/api/quiz/start-diagnostic`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/start-diagnostic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -258,10 +262,76 @@ export const getDiagnosticQuestion = async (
   apiUrl: string,
   questionIndex: number
 ): Promise<any> => {
-  const response = await fetch(`http://localhost:3000/api/quiz/diagnostic/question/${questionIndex}`);
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/diagnostic/question/${questionIndex}`);
   
   if (!response.ok) {
     throw new Error('Failed to get diagnostic question');
+  }
+
+  const data = await response.json();
+  return data.data;
+};
+
+// New: Generate Diagnostic Quiz (POST /api/quiz/generate)
+export const generateDiagnosticQuiz = async (
+  config: ApiConfig
+): Promise<{ questions: QuizQuestion[]; quizId: string }> => {
+  const response = await fetch(`${BACKEND_URL}/api/quiz/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: config.sessionId,
+      quiz_type: 'diagnostic',
+      // Optionally add difficulty if needed
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to generate diagnostic quiz');
+  }
+
+  const data = await response.json();
+  // Map backend format to local QuizQuestion[]
+  const questions = data.questions.map((q: any) => ({
+    id: '', // Backend does not provide id, can generate if needed
+    question: q.question,
+    options: Object.values(q.choices),
+    correctAnswer: ['a', 'b', 'c', 'd'].indexOf(q.correct_answer.toLowerCase()),
+    explanation: q.explanation,
+    topicTag: q.topic || '',
+    difficulty: 'medium', // Default or map if provided
+  }));
+  return { questions, quizId: data.quiz_id };
+};
+
+// New: Submit Diagnostic Quiz (POST /api/quiz/submit)
+export const submitDiagnosticQuiz = async (
+  config: ApiConfig,
+  quizId: string,
+  questions: QuizQuestion[],
+  answers: number[],
+  userId: string
+): Promise<any> => {
+  // Prepare responses array for backend
+  const responses = questions.map((q, idx) => ({
+    quiz_id: quizId,
+    selected_option: String.fromCharCode(65 + answers[idx]), // 'A', 'B', ...
+    correct: answers[idx] === q.correctAnswer,
+    topic: q.topicTag || '',
+  }));
+
+  const response = await fetch(`${BACKEND_URL}/api/quiz/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      quiz_type: 'diagnostic',
+      responses
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to submit diagnostic quiz');
   }
 
   const data = await response.json();

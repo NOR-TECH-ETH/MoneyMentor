@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any, List
 import logging
+import uuid
 
 from app.models.schemas import QuizRequest, QuizResponse, QuizAttempt, QuizAttemptResponse, QuizSubmission, QuizSubmissionBatch
 from app.agents.crew import money_mentor_crew
@@ -22,13 +23,14 @@ async def generate_quiz(request: QuizRequest):
     try:
         session = await get_session(request.session_id)
         if not session:
+            logger.debug("creating new session✅session✅session✅session✅session✅")
             # If session does not exist, create it (frontend always provides a valid session_id)
             session = await create_session(request.session_id)
         chat_history = session.get("chat_history", [])
 
         quiz_service = QuizService()
         quiz_id = f"quiz_{request.session_id}_{datetime.utcnow().timestamp()}"
-
+        print(f"{chat_history} ✅session✅session✅session✅session✅")
         if not chat_history:
             # No chat history: generate diagnostic quiz (10 questions) from knowledge base
             diagnostic_questions = await quiz_service.generate_diagnostic_quiz()
@@ -288,4 +290,11 @@ async def get_quiz_history(user_id: str):
         
     except Exception as e:
         logger.error(f"Quiz history retrieval failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get quiz history") 
+        raise HTTPException(status_code=500, detail="Failed to get quiz history")
+
+@router.post("/session/")
+async def create_new_session():
+    """Create a new user session and return session data"""
+    session_id = str(uuid.uuid4())
+    session = await create_session(session_id)
+    return session 

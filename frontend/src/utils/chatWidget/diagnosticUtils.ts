@@ -1,11 +1,13 @@
-import { DiagnosticTest, ChatMessage } from '../../types';
+import { DiagnosticTest, ChatMessage, QuizQuestion } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
+import { generateDiagnosticQuiz as apiGenerateDiagnosticQuiz, submitDiagnosticQuiz as apiSubmitDiagnosticQuiz, ApiConfig } from './api';
 
 export interface DiagnosticState {
   test: DiagnosticTest | null;
   currentQuestionIndex: number;
   answers: number[];
   isActive: boolean;
+  quizId?: string;
 }
 
 export interface DiagnosticResult {
@@ -23,17 +25,19 @@ export const initializeDiagnosticState = (): DiagnosticState => ({
   test: null,
   currentQuestionIndex: 0,
   answers: [],
-  isActive: false
+  isActive: false,
+  quizId: undefined
 });
 
 /**
  * Setup diagnostic test with questions
  */
-export const setupDiagnosticTest = (test: DiagnosticTest): DiagnosticState => ({
+export const setupDiagnosticTest = (test: DiagnosticTest, quizId: string): DiagnosticState => ({
   test,
   currentQuestionIndex: 0,
   answers: new Array(test.questions.length).fill(-1),
-  isActive: true
+  isActive: true,
+  quizId
 });
 
 /**
@@ -166,5 +170,27 @@ export const resetDiagnosticState = (): DiagnosticState => ({
   test: null,
   currentQuestionIndex: 0,
   answers: [],
-  isActive: false
-}); 
+  isActive: false,
+  quizId: undefined
+});
+
+// --- New API helpers ---
+export const fetchDiagnosticQuiz = async (config: ApiConfig): Promise<{ test: DiagnosticTest; quizId: string }> => {
+  const { questions, quizId } = await apiGenerateDiagnosticQuiz(config);
+  const test: DiagnosticTest = {
+    questions,
+    totalQuestions: questions.length,
+    passingScore: 70 // or whatever logic you want
+  };
+  return { test, quizId };
+};
+
+export const submitDiagnosticQuizAnswers = async (
+  config: ApiConfig,
+  quizId: string,
+  questions: QuizQuestion[],
+  answers: number[],
+  userId: string
+) => {
+  return apiSubmitDiagnosticQuiz(config, quizId, questions, answers, userId);
+}; 

@@ -451,9 +451,14 @@ class QuizService:
             logger.error(f"Error extracting topic from message: {e}")
             return "General Finance"
 
-    async def generate_quiz_from_history(self, session_id: str, topic: str, quiz_type: str, difficulty: str, chat_history: list) -> list:
-        """Generate a quiz based on chat history, topic, quiz_type, and difficulty."""
+    async def generate_quiz_from_history(self, session_id: str, quiz_type: str, difficulty: str, chat_history: list) -> list:
+        """Generate a quiz based on chat history, quiz_type, and difficulty. Deduces topic from chat history."""
         try:
+            # Extract topic from the most recent user message
+            user_messages = [msg["content"] for msg in chat_history if msg.get("role") == "user"]
+            last_user_message = user_messages[-1] if user_messages else ""
+            topic = self.extract_topic_from_message(last_user_message)
+
             # Prepare prompt for LLM
             chat_context = "\n".join([
                 f"{msg['role']}: {msg['content']}" for msg in chat_history if 'role' in msg and 'content' in msg
