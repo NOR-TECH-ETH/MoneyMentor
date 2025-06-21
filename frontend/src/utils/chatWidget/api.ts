@@ -6,12 +6,16 @@ export interface ApiConfig {
   sessionId: string;
 }
 
+// Get environment variables
+const BACKEND_URL = import.meta.env.VITE_BACKEND;
+const BACKEND_TWO_URL = import.meta.env.VITE_BACKEND_TWO;
+
 // Chat API calls - Using port 8000
 export const sendChatMessage = async (
   config: ApiConfig,
   message: string
 ): Promise<ChatResponse> => {
-  const response = await fetch(`https://backend-647308514289.us-central1.run.app/api/chat/message`, {
+  const response = await fetch(`${BACKEND_URL}/api/chat/message`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -33,7 +37,7 @@ export const sendChatMessage = async (
 export const initializeQuizSession = async (
   config: ApiConfig
 ): Promise<QuizSession> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/quiz/session`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -53,7 +57,7 @@ export const initializeQuizSession = async (
 export const loadDiagnosticTest = async (
   apiUrl: string
 ): Promise<DiagnosticTest> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/quiz/diagnostic`);
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/diagnostic`);
   
   if (!response.ok) {
     throw new Error('Failed to load diagnostic test');
@@ -67,7 +71,7 @@ export const completeDiagnosticTest = async (
   config: ApiConfig,
   score: number
 ): Promise<any> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/quiz/complete-diagnostic`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/complete-diagnostic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -92,7 +96,7 @@ export const logQuizAnswer = async (
   correct: boolean,
   topicTag: string
 ): Promise<void> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/quiz/log`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/log`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -117,7 +121,7 @@ export const logQuizAnswer = async (
 export const getAvailableCourses = async (
   config: ApiConfig
 ): Promise<any> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/chat/courses?userId=${config.userId}&sessionId=${config.sessionId}`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/courses?userId=${config.userId}&sessionId=${config.sessionId}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -134,7 +138,7 @@ export const startCourse = async (
   config: ApiConfig,
   courseId: string
 ): Promise<any> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/chat/course/start`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -155,7 +159,7 @@ export const navigateCoursePage = async (
   config: ApiConfig,
   pageIndex: number
 ): Promise<any> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/chat/course/navigate`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/navigate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -175,7 +179,7 @@ export const submitCourseQuiz = async (
   config: ApiConfig,
   answers: number[]
 ): Promise<any> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/chat/course/quiz`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/quiz`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -201,7 +205,7 @@ export const uploadFile = async (
   formData.append('userId', config.userId);
   formData.append('sessionId', config.sessionId);
 
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/content/upload`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/content/upload`, {
     method: 'POST',
     body: formData,
   });
@@ -218,7 +222,7 @@ export const removeFile = async (
   config: ApiConfig,
   fileName: string
 ): Promise<void> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/content/remove`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/content/remove`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -237,7 +241,7 @@ export const removeFile = async (
 export const startDiagnosticTest = async (
   config: ApiConfig
 ): Promise<any> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/quiz/start-diagnostic`, {
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/start-diagnostic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
@@ -258,7 +262,7 @@ export const getDiagnosticQuestion = async (
   apiUrl: string,
   questionIndex: number
 ): Promise<any> => {
-  const response = await fetch(`https://backend-2-647308514289.us-central1.run.app/api/quiz/diagnostic/question/${questionIndex}`);
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/diagnostic/question/${questionIndex}`);
   
   if (!response.ok) {
     throw new Error('Failed to get diagnostic question');
@@ -272,7 +276,7 @@ export const getDiagnosticQuestion = async (
 export const generateDiagnosticQuiz = async (
   config: ApiConfig
 ): Promise<{ questions: QuizQuestion[]; quizId: string }> => {
-  const response = await fetch(`https://backend-647308514289.us-central1.run.app/api/quiz/generate`, {
+  const response = await fetch(`${BACKEND_URL}/api/quiz/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -316,7 +320,7 @@ export const submitDiagnosticQuiz = async (
     topic: q.topicTag || '',
   }));
 
-  const response = await fetch(`https://backend-647308514289.us-central1.run.app/api/quiz/submit`, {
+  const response = await fetch(`${BACKEND_URL}/api/quiz/submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

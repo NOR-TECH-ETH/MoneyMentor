@@ -3,13 +3,16 @@ import { createRoot } from 'react-dom/client';
 import { ChatWidget } from './components/ChatWidget';
 import './styles/ChatWidget.css';
 
+// Get environment variables
+const BACKEND_TWO_URL = import.meta.env.VITE_BACKEND_TWO;
+
 // Development demo app
 function DemoApp() {
   console.log('DemoApp rendering...'); // Debug log
 
   return (
     <ChatWidget
-      apiUrl="https://backend-2-647308514289.us-central1.run.app"
+      apiUrl={BACKEND_TWO_URL}
       position="bottom-right"
       theme="light"
     />
@@ -36,7 +39,7 @@ export function initMoneyMentorWidget(config?: {
   containerId?: string;
 }) {
   const {
-    apiUrl = 'https://backend-2-647308514289.us-central1.run.app',
+    apiUrl = BACKEND_TWO_URL,
     position = 'bottom-right',
     theme = 'light',
     containerId = 'money-mentor-widget'
