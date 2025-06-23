@@ -5,20 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    lib: {
-      entry: 'src/main.tsx',
-      name: 'MoneyMentor',
-      fileName: (format) => `money-mentor.${format}.js`
-    },
-    rollupOptions: {
-      external: ['react', 'react-dom'],
-      output: {
-        globals: {
-          react: 'React',
-          'react-dom': 'ReactDOM'
-        }
-      }
-    }
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: true
   },
   server: {
     port: 5173
