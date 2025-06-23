@@ -1,8 +1,12 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.routes import chat, quiz, calculation, progress, content
 
+port = int(os.environ.get("PORT", 8080))
+# Log the allowed origins
+print("✅ Allowed CORS origins:", settings.CORS_ORIGINS)
 app = FastAPI(
     title="MoneyMentor API",
     description="AI-powered financial education chatbot with quiz engine and calculation services",
@@ -48,7 +52,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=settings.DEBUG,
         log_level="info"
     ) 

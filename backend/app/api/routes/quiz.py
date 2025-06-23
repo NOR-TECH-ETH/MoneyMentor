@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any, List
 import logging
+import uuid
 
 from app.models.schemas import QuizRequest, QuizResponse, QuizAttempt, QuizAttemptResponse, QuizSubmission, QuizSubmissionBatch
 from app.agents.crew import money_mentor_crew
@@ -22,16 +23,20 @@ async def generate_quiz(request: QuizRequest):
     try:
         session = await get_session(request.session_id)
         if not session:
+            logger.debug("creating new session✅session✅session✅session✅session✅")
             # If session does not exist, create it (frontend always provides a valid session_id)
             session = await create_session(request.session_id)
         chat_history = session.get("chat_history", [])
 
         quiz_service = QuizService()
         quiz_id = f"quiz_{request.session_id}_{datetime.utcnow().timestamp()}"
-
-        if not chat_history:
-            # No chat history: generate diagnostic quiz (10 questions) from knowledge base
-            diagnostic_questions = await quiz_service.generate_diagnostic_quiz()
+        print(f"{chat_history} ✅session✅session✅session✅session✅")
+        
+        # Check if topic is provided in request to determine quiz type
+        if request.topic:
+            # Topic provided: generate diagnostic quiz (10 questions) focused on the specific topic
+            difficulty = request.difficulty if request.difficulty else "mixed"
+            diagnostic_questions = await quiz_service.generate_diagnostic_quiz(topic=request.topic, difficulty=difficulty)
             # Convert to required structure (choices, correct_answer as str, etc.)
             processed_questions = []
             for q in diagnostic_questions:
@@ -39,18 +44,28 @@ async def generate_quiz(request: QuizRequest):
                     'question': q.get('question', ''),
                     'choices': q.get('choices', {}),
                     'correct_answer': q.get('correct_answer', ''),
-                    'explanation': q.get('explanation', '')
+                    'explanation': q.get('explanation', ''),
+                    'topic': q.get('topic', ''),  # Include topic for diagnostic quiz
+                    'difficulty': q.get('difficulty', difficulty)  # Include difficulty
                 })
             return QuizResponse(
                 questions=processed_questions,
                 quiz_id=quiz_id,
-                quiz_type=request.quiz_type
+                quiz_type=request.quiz_type,
+                topic=request.topic  # Include topic for diagnostic quiz
             )
         else:
-            # Chat history exists: generate a single micro-quiz question about the most recent topic
-            # user_messages = "\n".join([msg["content"] for msg in chat_history if msg.get("role") == "user"])
+            # No topic provided: generate micro-quiz question about the most recent topic from chat history
+            # Extract topic from chat history for micro quiz
+            recent_messages = [msg for msg in chat_history if msg.get("role") == "user"]
+            if recent_messages:
+                topic = quiz_service.extract_topic_from_message(recent_messages[-1].get("content", ""))
+            else:
+                topic = "General Finance"
+            
             questions = await quiz_service.generate_quiz_from_history(
                 session_id=request.session_id,
+                topic=topic,
                 quiz_type=request.quiz_type.value,
                 difficulty=request.difficulty or "medium",
                 chat_history=chat_history
@@ -60,6 +75,7 @@ async def generate_quiz(request: QuizRequest):
                 questions=questions[:1],
                 quiz_id=quiz_id,
                 quiz_type=request.quiz_type
+                # Don't include topic for micro quiz response
             )
     except Exception as e:
         logger.error(f"Quiz generation failed: {e}")
@@ -288,4 +304,11 @@ async def get_quiz_history(user_id: str):
         
     except Exception as e:
         logger.error(f"Quiz history retrieval failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get quiz history") 
+        raise HTTPException(status_code=500, detail="Failed to get quiz history")
+
+@router.post("/session/")
+async def create_new_session():
+    """Create a new user session and return session data"""
+    session_id = str(uuid.uuid4())
+    session = await create_session(session_id)
+    return session 

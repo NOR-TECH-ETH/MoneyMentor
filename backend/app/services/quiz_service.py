@@ -68,34 +68,86 @@ class QuizService:
             logger.error(f"Failed to check diagnostic status: {e}")
             return True
     
-    async def generate_diagnostic_quiz(self) -> List[Dict[str, Any]]:
-        """Generate diagnostic pre-test questions using predefined general financial topics"""
+    async def generate_diagnostic_quiz(self, topic: str = None, difficulty: str = "mixed") -> List[Dict[str, Any]]:
+        """Generate diagnostic pre-test questions focused on a specific topic"""
         try:
-            topics = self.diagnostic_topics
-            prompt = (
-                f"Generate 10 multiple-choice questions for a diagnostic quiz. "
-                f"Each question should cover one of these topics: {', '.join(topics)}. "
-                f"Return ONLY a valid JSON array of questions, no explanation, no markdown, no extra text. "
-                f"Each question should have: "
-                f"'question' (text), 'choices' (object with keys 'a', 'b', 'c', 'd' and string values), "
-                f"'correct_answer' (one of 'a', 'b', 'c', 'd'), and 'explanation' (short explanation for the correct answer)."
-            )
+            if topic:
+                if difficulty == "mixed":
+                    # Generate 10 questions with mixed difficulties in a single call: 40% easy, 40% medium, 20% hard
+                    prompt = (
+                        f"Generate 10 multiple-choice questions for a diagnostic quiz focused on the topic: {topic}. "
+                        f"All questions should be about {topic} and cover different aspects of this topic. "
+                        f"Create a MIXED difficulty distribution: 4 EASY questions (40%), 4 MEDIUM questions (40%), and 2 HARD questions (20%). "
+                        f"Return ONLY a valid JSON array of questions, no explanation, no markdown, no extra text. "
+                        f"Each question should have: "
+                        f"'question' (text), 'choices' (object with keys 'a', 'b', 'c', 'd' and string values), "
+                        f"'correct_answer' (one of 'a', 'b', 'c', 'd'), 'explanation' (short explanation for the correct answer), "
+                        f"and 'difficulty' (set to 'easy', 'medium', or 'hard' based on the question's complexity). "
+                        f"Make sure to include exactly 4 easy, 4 medium, and 2 hard questions."
+                    )
+                else:
+                    # Generate 10 questions with specific difficulty
+                    prompt = (
+                        f"Generate 10 multiple-choice questions for a diagnostic quiz focused on the topic: {topic}. "
+                        f"All questions should be about {topic} and cover different aspects of this topic. "
+                        f"The difficulty level should be {difficulty}. "
+                        f"Return ONLY a valid JSON array of questions, no explanation, no markdown, no extra text. "
+                        f"Each question should have: "
+                        f"'question' (text), 'choices' (object with keys 'a', 'b', 'c', 'd' and string values), "
+                        f"'correct_answer' (one of 'a', 'b', 'c', 'd'), 'explanation' (short explanation for the correct answer), "
+                        f"and 'difficulty' (one of 'easy', 'medium', 'hard')."
+                    )
+            else:
+                # Fallback to predefined topics if no specific topic provided
+                topics = self.diagnostic_topics
+                if difficulty == "mixed":
+                    # Generate 10 questions with mixed difficulties for predefined topics
+                    prompt = (
+                        f"Generate 10 multiple-choice questions for a diagnostic quiz. "
+                        f"Each question should cover one of these topics: {', '.join(topics)}. "
+                        f"Create a MIXED difficulty distribution: 4 EASY questions (40%), 4 MEDIUM questions (40%), and 2 HARD questions (20%). "
+                        f"Return ONLY a valid JSON array of questions, no explanation, no markdown, no extra text. "
+                        f"Each question should have: "
+                        f"'question' (text), 'choices' (object with keys 'a', 'b', 'c', 'd' and string values), "
+                        f"'correct_answer' (one of 'a', 'b', 'c', 'd'), 'explanation' (short explanation for the correct answer), "
+                        f"and 'difficulty' (set to 'easy', 'medium', or 'hard' based on the question's complexity). "
+                        f"Make sure to include exactly 4 easy, 4 medium, and 2 hard questions."
+                    )
+                else:
+                    # Generate 10 questions with specific difficulty
+                    prompt = (
+                        f"Generate 10 multiple-choice questions for a diagnostic quiz. "
+                        f"Each question should cover one of these topics: {', '.join(topics)}. "
+                        f"The difficulty level should be {difficulty}. "
+                        f"Return ONLY a valid JSON array of questions, no explanation, no markdown, no extra text. "
+                        f"Each question should have: "
+                        f"'question' (text), 'choices' (object with keys 'a', 'b', 'c', 'd' and string values), "
+                        f"'correct_answer' (one of 'a', 'b', 'c', 'd'), 'explanation' (short explanation for the correct answer), "
+                        f"and 'difficulty' (one of 'easy', 'medium', 'hard')."
+                    )
+            
             response = self.llm.invoke([HumanMessage(content=prompt)])
             import json
             try:
                 questions = json.loads(response.content)
-                processed_questions = []
-                for q in questions:
-                    processed_questions.append({
-                        'question': q.get('question', ''),
-                        'choices': q.get('choices', {}),
-                        'correct_answer': q.get('correct_answer', ''),
-                        'explanation': q.get('explanation', '')
-                    })
-                return processed_questions
             except Exception as e:
                 logger.error(f"Failed to parse diagnostic quiz JSON: {e}. Raw LLM output: {response.content}")
                 return []
+            
+            # Process all questions
+            processed_questions = []
+            for i, q in enumerate(questions):
+                # Use the provided topic or assign from predefined list
+                question_topic = topic if topic else self.diagnostic_topics[i % len(self.diagnostic_topics)]
+                processed_questions.append({
+                    'question': q.get('question', ''),
+                    'choices': q.get('choices', {}),
+                    'correct_answer': q.get('correct_answer', ''),
+                    'explanation': q.get('explanation', ''),
+                    'topic': question_topic,  # Add topic to each question
+                    'difficulty': q.get('difficulty', difficulty)  # Add difficulty to each question
+                })
+            return processed_questions
         except Exception as e:
             logger.error(f"Failed to generate diagnostic quiz: {e}")
             return []
@@ -460,10 +512,10 @@ class QuizService:
             ])
             prompt = (
                 f"You are a financial education assistant. Based on the following chat history, "
-                f"generate a {quiz_type} quiz for the user. The quiz should be about the most relevant topic "
-                f"from the conversation (topic: {topic}). The difficulty should be {difficulty}.\n"
+                f"generate a {quiz_type} quiz for the user. The quiz should be about the specific topic: {topic}. "
+                f"The difficulty should be {difficulty}.\n"
                 f"Chat history:\n{chat_context}\n"
-                f"Return a JSON array of questions. Each question should have: 'question' (text), 'choices' (an object with keys 'a', 'b', 'c', 'd' and string values), 'correct_answer' (one of 'a', 'b', 'c', 'd'), and 'explanation' (short explanation for the correct answer). Example format: [{{'question': '...', 'choices': {{'a': '...', 'b': '...', 'c': '...', 'd': '...'}}, 'correct_answer': 'a', 'explanation': '...'}}]"
+                f"Return a JSON array of questions. Each question should have: 'question' (text), 'choices' (an object with keys 'a', 'b', 'c', 'd' and string values), 'correct_answer' (one of 'a', 'b', 'c', 'd'), 'explanation' (short explanation for the correct answer), and 'difficulty' (one of 'easy', 'medium', 'hard'). Example format: [{{'question': '...', 'choices': {{'a': '...', 'b': '...', 'c': '...', 'd': '...'}}, 'correct_answer': 'a', 'explanation': '...', 'difficulty': 'medium'}}]"
             )
             response = self.llm.invoke([HumanMessage(content=prompt)])
             import json
@@ -473,7 +525,7 @@ class QuizService:
                 logger.error(f"Failed to parse LLM response as JSON: {e}, response: {response.content}")
                 raise ValueError("LLM did not return valid JSON.")
 
-            # Post-process to ensure structure
+            # Post-process to ensure structure and add topic information only for diagnostic quizzes
             processed_questions = []
             for q in questions:
                 # If 'options' is present, convert to 'choices'
@@ -484,13 +536,21 @@ class QuizService:
                 if 'choices' in q and not isinstance(q['choices'], dict):
                     if isinstance(q['choices'], list) and len(q['choices']) == 4:
                         q['choices'] = {k: v for k, v in zip(['a', 'b', 'c', 'd'], q['choices'])}
-                # Ensure only the required keys are present
-                processed_questions.append({
+                
+                # Base question structure
+                question_data = {
                     'question': q.get('question', ''),
                     'choices': q.get('choices', {}),
                     'correct_answer': q.get('correct_answer', ''),
-                    'explanation': q.get('explanation', '')
-                })
+                    'explanation': q.get('explanation', ''),
+                    'difficulty': q.get('difficulty', difficulty)  # Add difficulty to each question
+                }
+                
+                # Only add topic for diagnostic quizzes
+                if quiz_type == "diagnostic":
+                    question_data['topic'] = topic
+                
+                processed_questions.append(question_data)
             return processed_questions
         except Exception as e:
             logger.error(f"Failed to generate quiz from history: {e}")

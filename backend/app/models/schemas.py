@@ -25,17 +25,20 @@ class QuizQuestion(BaseModel):
     choices: Dict[str, str] = Field(..., description="Multiple choice options with keys a, b, c, d")
     correct_answer: str = Field(..., description="Correct answer key (a, b, c, or d)")
     explanation: str = Field(..., description="Explanation for the correct answer")
+    topic: Optional[str] = Field(None, description="Topic of the question")
+    difficulty: Optional[str] = Field(None, description="Difficulty level of the question (easy, medium, hard)")
 
 class QuizRequest(BaseModel):
     session_id: str = Field(..., description="Session identifier")
     quiz_type: QuizType = Field(..., description="Type of quiz")
+    topic: Optional[str] = Field(None, description="Topic of the quiz")
     difficulty: Optional[str] = Field("medium", description="Quiz difficulty level")
 
 class QuizResponse(BaseModel):
     questions: List[QuizQuestion] = Field(..., description="List of quiz questions")
     quiz_id: str = Field(..., description="Unique quiz identifier")
     quiz_type: QuizType = Field(..., description="Type of quiz")
-
+    topic: Optional[str] = Field(None, description="Topic of the quiz")
 class QuizAttempt(BaseModel):
     user_id: str = Field(..., description="User identifier")
     quiz_id: str = Field(..., description="Quiz identifier")
