@@ -198,6 +198,90 @@ class TopicResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+class CourseRecommendation(BaseModel):
+    """Schema for course recommendation based on diagnostic results following student lesson template"""
+    title: str = Field(..., description="Course title")
+    module: str = Field(..., description="Module name")
+    track: str = Field(..., description="Track (e.g., 'High School')")
+    estimated_length: str = Field(..., description="Estimated course length (e.g., '2,000-2,500 words')")
+    lesson_overview: str = Field(..., description="Brief overview explaining why the lesson matters and what students will learn")
+    learning_objectives: List[str] = Field(..., description="List of key learning objectives")
+    core_concepts: List[Dict[str, str]] = Field(..., description="List of core concepts with title, explanation, metaphor, and quick_challenge")
+    key_terms: List[Dict[str, str]] = Field(..., description="List of key terms with term, definition, and example")
+    real_life_scenarios: List[Dict[str, str]] = Field(..., description="List of real-life scenarios with title and narrative")
+    mistakes_to_avoid: List[str] = Field(..., description="List of common misconceptions or financial mistakes")
+    action_steps: List[str] = Field(..., description="List of step-by-step actions students can try")
+    summary: str = Field(..., description="Wrap-up paragraph reinforcing the lesson takeaway")
+    reflection_prompt: str = Field(..., description="Journal-style question for student reflection")
+    sample_quiz: List[Dict[str, Any]] = Field(..., description="List of sample quiz questions with options, correct answer, and explanation")
+    course_level: str = Field(..., description="Course difficulty level (beginner/intermediate/advanced)")
+    why_recommended: str = Field(..., description="Explanation of why this course was recommended")
+    has_quiz: bool = Field(..., description="Whether the course includes a quiz section")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "title": "Intermediate Risk Management",
+                "module": "Investment Fundamentals",
+                "track": "High School",
+                "estimated_length": "2,000-2,500 words",
+                "lesson_overview": "This lesson will help you master risk management concepts that are essential for making smart investment decisions. You'll learn practical strategies that connect directly to real-life money situations you'll face.",
+                "learning_objectives": [
+                    "Understand different types of investment risks",
+                    "Learn risk mitigation strategies",
+                    "Build a balanced portfolio"
+                ],
+                "core_concepts": [
+                    {
+                        "title": "Understanding Investment Risk",
+                        "explanation": "Investment risk is the possibility of losing money on an investment. Different investments have different levels of risk.",
+                        "metaphor": "Think of it like crossing a street - some crossings are safer than others!",
+                        "quick_challenge": "What's one risky financial decision you've seen someone make?"
+                    }
+                ],
+                "key_terms": [
+                    {
+                        "term": "Risk Management",
+                        "definition": "The practice of identifying and minimizing potential losses",
+                        "example": "Diversifying your investments across different types of assets"
+                    }
+                ],
+                "real_life_scenarios": [
+                    {
+                        "title": "Maria's First Investment",
+                        "narrative": "Maria, a high school student, wanted to invest her summer job savings. She researched different options and chose a mix of stocks and bonds to balance risk and potential returns."
+                    }
+                ],
+                "mistakes_to_avoid": [
+                    "Putting all your money in one investment",
+                    "Ignoring the risk level of investments"
+                ],
+                "action_steps": [
+                    "Research different investment types",
+                    "Create a simple investment plan",
+                    "Start with small amounts to learn"
+                ],
+                "summary": "You've taken an important step toward understanding risk management. Remember, every investment decision involves balancing risk and potential reward.",
+                "reflection_prompt": "What's one investment risk you want to understand better?",
+                "sample_quiz": [
+                    {
+                        "question": "What is the main benefit of diversifying your investments?",
+                        "options": {
+                            "a": "It guarantees higher returns",
+                            "b": "It reduces overall risk",
+                            "c": "It's required by law",
+                            "d": "It doesn't matter"
+                        },
+                        "correct_answer": "b",
+                        "explanation": "Diversification spreads risk across different investments, reducing the chance of losing everything."
+                    }
+                ],
+                "course_level": "intermediate",
+                "why_recommended": "Based on your 65% diagnostic score and identified weaknesses in risk management concepts.",
+                "has_quiz": True
+            }
+        }
+
 class ChatMessageRequest(BaseModel):
     """Schema for chat message request"""
     query: str = Field(..., description="The user's query")
