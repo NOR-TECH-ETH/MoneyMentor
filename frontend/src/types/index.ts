@@ -70,6 +70,8 @@ export interface CoursePage {
   content: string;
   pageNumber: number;
   totalPages: number;
+  pageType?: string;
+  quizData?: any;
 }
 
 export interface Course {
@@ -106,4 +108,63 @@ export const STORAGE_KEYS = {
   QUIZ_PROGRESS: 'moneymentor_quiz_progress',
   CHAT_HISTORY: 'moneymentor_chat_history',
   PREFERENCES: 'moneymentor_preferences',
-} as const; 
+} as const;
+
+// Sidebar types
+export interface SidebarState {
+  isOpen: boolean;
+  isCollapsed: boolean;
+  selectedSessionId: string | null;
+}
+
+// User Profile types
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+  joinDate: string;
+  subscription: 'free' | 'premium';
+  totalChats: number;
+  totalQuizzes: number;
+  streakDays: number;
+  preferences: {
+    theme: 'light' | 'dark';
+    notifications: boolean;
+    autoSave: boolean;
+  };
+}
+
+// Chat Session types
+export interface ChatSession {
+  id: string;
+  title: string;
+  preview: string;
+  timestamp: string;
+  messageCount: number;
+  lastActivity: string;
+  tags: string[];
+  isActive?: boolean;
+}
+
+// Profile Modal types
+export interface ProfileModalState {
+  isOpen: boolean;
+  activeTab: 'profile' | 'settings' | 'subscription';
+}
+
+// Sidebar handlers props
+export interface SidebarHandlersProps {
+  sidebarState: SidebarState;
+  setSidebarState: (state: SidebarState) => void;
+  onSessionSelect: (sessionId: string) => void;
+  onNewChat: () => void;
+}
+
+// Profile handlers props
+export interface ProfileHandlersProps {
+  profileModalState: ProfileModalState;
+  setProfileModalState: (state: ProfileModalState) => void;
+  userProfile: UserProfile;
+  onProfileUpdate: (profile: Partial<UserProfile>) => void;
+} 

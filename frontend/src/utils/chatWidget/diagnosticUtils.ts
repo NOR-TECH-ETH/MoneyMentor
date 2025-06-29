@@ -175,8 +175,8 @@ export const resetDiagnosticState = (): DiagnosticState => ({
 });
 
 // --- New API helpers ---
-export const fetchDiagnosticQuiz = async (config: ApiConfig): Promise<{ test: DiagnosticTest; quizId: string }> => {
-  const { questions, quizId } = await apiGenerateDiagnosticQuiz(config);
+export const fetchDiagnosticQuiz = async (config: ApiConfig, topic?: string): Promise<{ test: DiagnosticTest; quizId: string }> => {
+  const { questions, quizId } = await apiGenerateDiagnosticQuiz(config, topic);
   const test: DiagnosticTest = {
     questions,
     totalQuestions: questions.length,

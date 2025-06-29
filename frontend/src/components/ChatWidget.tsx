@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { MessageCircle, X, Maximize2, Minimize2 } from 'lucide-react';
+
 import { 
   ChatMessage, 
-  ChatResponse, 
   QuizQuestion,
-  QuizSession,
   Course,
-  CoursePage
+  CoursePage,
+  ChatSession,
+  UserProfile
 } from '../types';
 
 // Import ChatWidget components
@@ -19,14 +19,17 @@ import {
   UploadProgressIndicator,
   UploadedFilesDisplay,
   ChatInput,
-  CommandInput,
   CalculationResult,
   MessageButtons,
   QuizHistoryDropdown,
+  BotMessage
 } from './ChatWidget/index';
 
 // Import Windows component
 import { Windows } from './Windows';
+
+// Import Sidebar components
+import { Sidebar, SidebarToggle } from './Sidebar';
 
 // Import logic handlers
 import {
@@ -50,7 +53,7 @@ import {
 } from '../logic';
 
 // Import custom hooks
-import { useSessionState, useScrollToBottom } from '../hooks';
+import { useSessionState, useScrollToBottom, useSidebar, useProfile } from '../hooks';
 
 // Import utilities
 import {
@@ -58,21 +61,9 @@ import {
   ApiConfig,
   sendChatMessage,
   generateDiagnosticQuiz,
-  initializeQuizSession,
-  loadDiagnosticTest,
-  startDiagnosticTest,
-  getDiagnosticQuestion,
-  logQuizAnswer,
-  completeDiagnosticTest,
-  startCourse,
-  navigateCoursePage,
-  submitCourseQuiz,
+
   uploadFile,
-  removeFile,
-  getAvailableCourses,
   
-  // Session utilities
-  initializeSession,
   SessionIds,
   
   // Diagnostic utilities
@@ -83,28 +74,20 @@ import {
   QuizFeedback,
   CourseQuizState,
   CourseQuizAnswers,
-  initializeCourseQuiz,
   initializeCourseQuizAnswers,
   handleCourseQuizAnswer,
   navigateToNextQuizQuestion,
   navigateToPreviousQuizQuestion,
   navigateToQuizQuestion,
   areAllQuestionsAnswered,
-  formatQuizResultMessage,
-  resetCourseQuizState,
-  createQuizFeedback,
+ 
   
   // Message utilities
   createWelcomeMessage,
   createSystemMessage,
   createUserMessage,
   createAssistantMessage,
-  formatUploadSuccessMessage,
-  formatUploadErrorMessage,
-  formatFileRemovalMessage,
-  formatCourseStartMessage,
-  formatCourseCompletionMessage,
-  renderMarkdown,
+ 
   formatMessageContent,
   
   // File utilities
@@ -113,11 +96,15 @@ import {
   initializeUploadProgress,
   updateUploadProgress,
   resetUploadProgress,
-  formatFileSize,
+
 } from '../utils/chatWidget';
+
+// Import session utilities
+import { getMockChatSessions } from '../utils/sessions';
 
 // Import styles
 import '../styles/windows.css';
+import '../styles/sidebar.css';
 
 // Window class to encapsulate all window state and functionality
 class WindowInstance {
@@ -183,16 +170,6 @@ class WindowInstance {
           this.sessionIds.userId
         );
         this.addMessage(welcomeMessage);
-      } else {
-        const learnWelcomeMessage = {
-          id: Date.now().toString(),
-          type: 'system' as const,
-          content: '📚 **Welcome to the Learning Center!**\n\nThis is your dedicated space for structured learning. Here you can access courses, track your progress, and earn certificates.\n\nTry typing: `/courses` to see available courses or `/diagnostic_test` to assess your knowledge level.',
-          timestamp: new Date().toISOString(),
-          sessionId: this.sessionIds.sessionId,
-          userId: this.sessionIds.userId
-        };
-        this.addMessage(learnWelcomeMessage);
       }
     }
   }
@@ -295,8 +272,8 @@ class WindowInstance {
   }
   
   // Handle start diagnostic test
-  async handleStartDiagnosticTest() {
-    await handleStartDiagnosticTest(this.createDiagnosticHandlersProps());
+  async handleStartDiagnosticTest(courseKey: string = "") {
+    await handleStartDiagnosticTest(this.createDiagnosticHandlersProps(), courseKey);
   }
   
   // Handle diagnostic quiz answer
@@ -320,18 +297,18 @@ class WindowInstance {
   }
   
   // Handle navigate course page
-  async handleNavigateCoursePage(pageIndex: number) {
-    await handleNavigateCoursePage(pageIndex, this.createCourseHandlersProps());
+  async handleNavigateCoursePage(courseId: string, pageIndex: number) {
+    await handleNavigateCoursePage(courseId, pageIndex, this.createCourseHandlersProps());
   }
   
   // Handle complete course
-  handleCompleteCourse(currentCourse: Course | null) {
-    handleCompleteCourse(currentCourse, this.createCourseHandlersProps());
+  async handleCompleteCourse(courseId: string) {
+    await handleCompleteCourse(courseId, this.createCourseHandlersProps());
   }
   
   // Handle submit course quiz
-  async handleSubmitCourseQuiz(courseQuiz: CourseQuizState | null, courseQuizAnswers: CourseQuizAnswers) {
-    await handleSubmitCourseQuiz(courseQuiz, courseQuizAnswers, this.createCourseHandlersProps());
+  async handleSubmitCourseQuiz(courseId: string, pageIndex: number, selectedOption: string, correct: boolean, currentTotalPages?: number) {
+    await handleSubmitCourseQuiz(courseId, pageIndex, selectedOption, correct, this.createCourseHandlersProps(), currentTotalPages);
   }
   
   // Handle quiz answer
@@ -381,22 +358,37 @@ interface ChatWidgetProps {
 
 export const ChatWidget: React.FC<ChatWidgetProps> = ({
   apiUrl = 'https://backend-2-647308514289.us-central1.run.app',
-  position = 'bottom-right',
+  position = 'fullscreen',
   theme = 'light'
 }) => {
   // UI State
   const [isOpen, setIsOpen] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [activeMode, setActiveMode] = useState('chat');
   
   // Session State - using custom hook
   const { sessionIds, setSessionIds } = useSessionState();
-  const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
+  
+  // Sidebar and Profile State
+  const sidebarHook = useSidebar();
+  const profileHook = useProfile();
+  
+  // Chat Sessions State
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>(getMockChatSessions());
+  
+  // Session handlers
+  const handleSessionSelect = (sessionId: string) => {
+    console.log('Selected session:', sessionId);
+    // TODO: Load session messages and update current chat
+  };
+  
+  const handleNewChat = () => {
+    console.log('Creating new chat');
+    // TODO: Clear current messages and start new session
+  };
+  
   
   // Command autocomplete state
-  const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
-  const [commandSuggestions, setCommandSuggestions] = useState<string[]>([]);
-  const [showCommandMenu, setShowCommandMenu] = useState(true);
+
   
   // Message counter for chat window
   const [chatMessageCount, setChatMessageCount] = useState(0);
@@ -418,11 +410,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   ]);
   
   // Available commands
-  const availableCommands = [
-    { command: 'diagnostic_test', description: 'Take a quick financial knowledge assessment' },
-    { command: 'courses', description: 'View available learning courses' },
    
-  ];
   
   // Window management state
   const [currentWindow, setCurrentWindow] = useState<'intro' | 'chat' | 'learn'>('intro');
@@ -550,99 +538,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     }
   };
 
-  // Message handling
-  const addMessage = (message: ChatMessage) => {
-    if (currentWindow === 'chat') {
-      setChatMessages(prev => [...prev, message]);
-    } else if (currentWindow === 'learn') {
-      setLearnMessages(prev => [...prev, message]);
-    }
-  };
-
-  // Get current window's messages
-  const getCurrentMessages = () => {
-    if (currentWindow === 'chat') {
-      return chatMessages;
-    } else if (currentWindow === 'learn') {
-      return learnMessages;
-    }
-    return [];
-  };
-
-  // Get current window's input value
-  const getCurrentInputValue = () => {
-    if (currentWindow === 'chat') {
-      return chatInputValue;
-    } else if (currentWindow === 'learn') {
-      return learnInputValue;
-    }
-    return '';
-  };
-
-  // Set current window's input value
-  const setCurrentInputValue = (value: string) => {
-    if (currentWindow === 'chat') {
-      setChatInputValue(value);
-    } else if (currentWindow === 'learn') {
-      setLearnInputValue(value);
-    }
-  };
-
-  // Get current window's loading state
-  const getCurrentIsLoading = () => {
-    if (currentWindow === 'chat') {
-      return chatIsLoading;
-    } else if (currentWindow === 'learn') {
-      return learnIsLoading;
-    }
-    return false;
-  };
-
-  // Set current window's loading state
-  const setCurrentIsLoading = (loading: boolean) => {
-    if (currentWindow === 'chat') {
-      setChatIsLoading(loading);
-    } else if (currentWindow === 'learn') {
-      setLearnIsLoading(loading);
-    }
-  };
-
-  // Close current displays (courses, quizzes, etc.) when a new command is executed
-  const closeCurrentDisplays = () => {
-    if (currentWindow === 'chat') {
-      chatWindow.closeCurrentDisplays();
-    } else if (currentWindow === 'learn') {
-      learnWindow.closeCurrentDisplays();
-    }
-  };
-
-  // Add a helper function to remove specific messages by content pattern
-  const removeIntroMessage = (contentPattern: string) => {
-    if (currentWindow === 'chat') {
-      setChatMessages(prev => prev.filter(msg => !msg.content.includes(contentPattern)));
-    } else if (currentWindow === 'learn') {
-      setLearnMessages(prev => prev.filter(msg => !msg.content.includes(contentPattern)));
-    }
-  };
-
-  // Handle input changes for command autocomplete
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setCurrentInputValue(value);
-    
-    // Handle command autocomplete
-    if (value.startsWith('/')) {
-      const matchingCommands = availableCommands
-        .filter(cmd => cmd.command.toLowerCase().startsWith(value.toLowerCase()))
-        .map(cmd => cmd.command);
-      
-      setCommandSuggestions(matchingCommands);
-      setShowCommandSuggestions(matchingCommands.length > 0);
-      } else {
-      setShowCommandSuggestions(false);
-      setCommandSuggestions([]);
-    }
-  };
 
   // Window-specific input change handlers
   const handleChatInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -652,38 +547,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     // Chat window doesn't process commands - just update input value
   };
 
-  const handleLearnInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setLearnInputValue(value);
-    
-    // Handle command autocomplete
-    if (value.startsWith('/')) {
-      const matchingCommands = availableCommands
-        .filter(cmd => cmd.command.toLowerCase().startsWith(value.toLowerCase()))
-        .map(cmd => cmd.command);
-      
-      setCommandSuggestions(matchingCommands);
-      setShowCommandSuggestions(matchingCommands.length > 0);
-    } else {
-      setShowCommandSuggestions(false);
-      setCommandSuggestions([]);
-    }
-  };
-
-  // Handle command selection
-  const handleCommandSelect = (command: string) => {
-    console.log('Setting active mode to:', command); // Debug log
-    setActiveMode(command);
-    setCurrentInputValue(command);
-    setShowCommandSuggestions(false);
-    setCommandSuggestions([]);
-    setShowCommandMenu(false);
-    // Send the command directly instead of waiting for input value update
-    if (currentWindow === 'learn') {
-      learnWindow.handleSendMessage(command);
-    }
-    // Chat window doesn't process commands
-  };
 
   // Window-specific message handlers
   const handleChatSendMessage = async (commandText?: string) => {
@@ -769,23 +632,21 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     }
   };
 
-  const handleLearnSendMessage = async (commandText?: string) => {
-    const messageText = commandText || learnInputValue.trim();
-    if (!messageText) return;
-    await learnWindow.handleSendMessage(messageText);
-  };
 
   // Window-specific wrapper functions for components
-  const handleChatStartDiagnosticTest = () => chatWindow.handleStartDiagnosticTest();
+  
   const handleChatDiagnosticQuizAnswer = (selectedOption: number, correct: boolean) => 
     chatWindow.handleDiagnosticQuizAnswer(selectedOption, correct, chatDiagnosticState);
-  const handleChatCompleteDiagnosticTest = (state: DiagnosticState) => 
-    chatWindow.handleCompleteDiagnosticTest(state);
-  const handleChatCoursesList = () => chatWindow.handleCoursesList();
+
   const handleChatStartCourse = (courseId: string) => chatWindow.handleStartCourse(courseId);
-  const handleChatNavigateCoursePage = (pageIndex: number) => chatWindow.handleNavigateCoursePage(pageIndex);
-  const handleChatCompleteCourse = () => chatWindow.handleCompleteCourse(chatCurrentCourse);
-  const handleChatSubmitCourseQuiz = () => chatWindow.handleSubmitCourseQuiz(chatCourseQuiz, chatCourseQuizAnswers);
+  const handleChatNavigateCoursePage = (pageIndex: number) => chatWindow.handleNavigateCoursePage(chatCurrentCourse?.id || '', pageIndex);
+  const handleChatCompleteCourse = () => chatWindow.handleCompleteCourse(chatCurrentCourse?.id || '');
+  const handleChatSubmitCourseQuiz = (selectedOption: number, correct: boolean) => {
+    const pageIndex = chatCourseQuiz?.pageIndex ?? 0;
+    const selectedOptionLetter = String.fromCharCode(65 + selectedOption); // Convert 0,1,2,3 to A,B,C,D
+    const currentTotalPages = chatCourseQuiz?.totalPages; // Get current total pages from quiz state
+    return chatWindow.handleSubmitCourseQuiz(chatCurrentCourse?.id || '', pageIndex, selectedOptionLetter, correct, currentTotalPages);
+  };
   const handleChatQuizAnswer = (selectedOption: number, correct: boolean) => {
     // Increment total answered
     setChatQuizTotalAnswered(prev => prev + 1);
@@ -827,29 +688,154 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setChatLastQuizAnswer(null);
     setChatCurrentQuiz(null);
   };
-  const handleChatFileUpload = (files: FileList) => chatWindow.handleFileUpload(files);
-  const handleChatRemoveFile = (fileIndex: number) => chatWindow.handleRemoveFile(fileIndex);
+  const handleChatFileUpload = async (files: FileList) => {
+    const validation = validateFiles(files);
+    
+    if (validation.validFiles.length === 0) {
+      const errorMessage = createSystemMessage(
+        'Please upload valid files (PDF, TXT, PPT, PPTX) under 10MB each.',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      setChatMessages(prev => [...prev, errorMessage]);
+      return;
+    }
+
+    setUploadProgress({ isUploading: true, progress: 0 });
+
+    try {
+      for (let i = 0; i < validation.validFiles.length; i++) {
+        const file = validation.validFiles[i];
+        
+        try {
+          await uploadFile(apiConfig, file);
+          setUploadedFiles(prev => [...prev, file]);
+          
+          const successMessage = createSystemMessage(
+            `File "${file.name}" uploaded successfully!`,
+            sessionIds.sessionId,
+            sessionIds.userId
+          );
+          setChatMessages(prev => [...prev, successMessage]);
+        } catch (error) {
+          const errorMessage = createSystemMessage(
+            `Failed to upload "${file.name}": ${error instanceof Error ? error.message : 'Unknown error'}`,
+            sessionIds.sessionId,
+            sessionIds.userId
+          );
+          setChatMessages(prev => [...prev, errorMessage]);
+        }
+
+        setUploadProgress(updateUploadProgress(i + 1, validation.validFiles.length, file.name));
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      const errorMessage = createSystemMessage(
+        'Upload failed. Please check your connection and try again.',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      setChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setUploadProgress(resetUploadProgress());
+    }
+  };
+  const handleChatRemoveFile = async (fileIndex: number) => {
+    // Safety check before attempting to remove
+    if (fileIndex < 0 || fileIndex >= uploadedFiles.length) {
+      console.error('Invalid file index:', fileIndex, 'uploadedFiles length:', uploadedFiles.length);
+      return;
+    }
+
+    const file = uploadedFiles[fileIndex];
+    if (!file) {
+      console.error('File not found at index:', fileIndex);
+      return;
+    }
+
+    try {
+      // Remove file from local state immediately
+      const updatedFiles = uploadedFiles.filter((_, index) => index !== fileIndex);
+      setUploadedFiles(updatedFiles);
+      
+      // Add removal message
+      const removalMessage = createSystemMessage(
+        `File "${file.name}" has been removed.`,
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      setChatMessages(prev => [...prev, removalMessage]);
+      
+      // Optionally try to remove from backend, but don't fail if it doesn't work
+      try {
+        // await removeFile(apiConfig, file.name);
+        // Backend remove endpoint might not exist, so we'll just remove locally
+      } catch (backendError) {
+        console.warn('Backend file removal failed, but file removed locally:', backendError);
+      }
+    } catch (error) {
+      console.error('Remove file error:', error);
+      const errorMessage = createSystemMessage(
+        'Failed to remove file. Please try again.',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      setChatMessages(prev => [...prev, errorMessage]);
+    }
+  };
   const handleChatCourseQuizAnswerSelection = (questionIndex: number, selectedOption: number) => 
     chatWindow.handleCourseQuizAnswerSelection(questionIndex, selectedOption, chatCourseQuizAnswers);
-  const handleChatCourseQuizNavigation = (direction: 'next' | 'previous' | number) => 
+  const handleChatCourseQuizNavigation = (direction: 'next' | 'previous' | number) => {
+    if (direction === 'previous' && chatCourseQuiz) {
+      // Navigate to previous page
+      const prevPageIndex = chatCourseQuiz.pageIndex - 1;
+      if (prevPageIndex >= 0) {
+        handleChatNavigateCoursePage(prevPageIndex);
+      }
+    } else if (direction === 'next' && chatCourseQuiz) {
+      // Navigate to next page
+      const nextPageIndex = chatCourseQuiz.pageIndex + 1;
+      handleChatNavigateCoursePage(nextPageIndex);
+    } else {
+      // Original quiz navigation logic for question-level navigation
     chatWindow.handleCourseQuizNavigation(direction, chatCourseQuiz, chatCourseQuizAnswers);
+    }
+  };
 
-  const handleLearnStartDiagnosticTest = () => learnWindow.handleStartDiagnosticTest();
+ 
   const handleLearnDiagnosticQuizAnswer = (selectedOption: number, correct: boolean) => 
     learnWindow.handleDiagnosticQuizAnswer(selectedOption, correct, learnDiagnosticState);
-  const handleLearnCompleteDiagnosticTest = (state: DiagnosticState) => 
-    learnWindow.handleCompleteDiagnosticTest(state);
-  const handleLearnCoursesList = () => learnWindow.handleCoursesList();
+  
+ 
   const handleLearnStartCourse = (courseId: string) => learnWindow.handleStartCourse(courseId);
-  const handleLearnNavigateCoursePage = (pageIndex: number) => learnWindow.handleNavigateCoursePage(pageIndex);
-  const handleLearnCompleteCourse = () => learnWindow.handleCompleteCourse(learnCurrentCourse);
-  const handleLearnSubmitCourseQuiz = () => learnWindow.handleSubmitCourseQuiz(learnCourseQuiz, learnCourseQuizAnswers);
+  const handleLearnNavigateCoursePage = (pageIndex: number) => learnWindow.handleNavigateCoursePage(learnCurrentCourse?.id || '', pageIndex);
+  const handleLearnCompleteCourse = () => learnWindow.handleCompleteCourse(learnCurrentCourse?.id || '');
+  const handleLearnSubmitCourseQuiz = (selectedOption: number, correct: boolean) => {
+    const pageIndex = learnCourseQuiz?.pageIndex ?? 0;
+    const selectedOptionLetter = String.fromCharCode(65 + selectedOption); // Convert 0,1,2,3 to A,B,C,D
+    const currentTotalPages = learnCourseQuiz?.totalPages; // Get current total pages from quiz state
+    return learnWindow.handleSubmitCourseQuiz(learnCurrentCourse?.id || '', pageIndex, selectedOptionLetter, correct, currentTotalPages);
+  };
   const handleLearnQuizAnswer = (selectedOption: number, correct: boolean) => 
     learnWindow.handleQuizAnswer(selectedOption, correct, learnCurrentQuiz);
   const handleLearnCourseQuizAnswerSelection = (questionIndex: number, selectedOption: number) => 
     learnWindow.handleCourseQuizAnswerSelection(questionIndex, selectedOption, learnCourseQuizAnswers);
-  const handleLearnCourseQuizNavigation = (direction: 'next' | 'previous' | number) => 
+  const handleLearnCourseQuizNavigation = (direction: 'next' | 'previous' | number) => {
+    if (direction === 'previous' && learnCourseQuiz) {
+      // Navigate to previous page
+      const prevPageIndex = learnCourseQuiz.pageIndex - 1;
+      if (prevPageIndex >= 0) {
+        handleLearnNavigateCoursePage(prevPageIndex);
+      }
+    } else if (direction === 'next' && learnCourseQuiz) {
+      // Navigate to next page
+      const nextPageIndex = learnCourseQuiz.pageIndex + 1;
+      handleLearnNavigateCoursePage(nextPageIndex);
+    } else {
+      // Original quiz navigation logic for question-level navigation
     learnWindow.handleCourseQuizNavigation(direction, learnCourseQuiz, learnCourseQuizAnswers);
+    }
+  };
 
   // Chat window diagnostic variables
   const hasChatDiagnosticTest = chatDiagnosticState.test && chatDiagnosticState.test.questions.length > 0;
@@ -866,75 +852,127 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   // Ref for the quiz tracker button
   const quizTrackerRef = React.useRef<HTMLButtonElement>(null);
 
-  if (!isOpen) {
-    return (
-      <div className={`chat-widget-container ${position}`}>
-        <button 
-          className="chat-toggle-button"
-          onClick={() => setIsOpen(true)}
-        >
-          <MessageCircle size={24} />
-        </button>
-      </div>
-    );
-  }
+  const LEARN_COURSES = [
+    { key: 'money-goals-mindset', label: 'Money, Goals and Mindset' },
+    { key: 'budgeting-saving', label: 'Budgeting and Saving' },
+    { key: 'college-planning-saving', label: 'College Planning and Saving' },
+    { key: 'earning-income-basics', label: 'Earning and Income Basics' },
+  ];
+
+  const [learnHasShownCourseList, setLearnHasShownCourseList] = useState(false);
+
+  // Handler for course selection in Learning Center
+  const handleLearnCourseTopicSelect = async (courseKey: string, courseLabel: string) => {
+    // Add a message indicating the user selected a course
+    setLearnMessages(prev => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        type: 'user',
+        content: `Selected course: **${courseLabel}**`,
+        timestamp: new Date().toISOString(),
+        sessionId: sessionIds.sessionId,
+        userId: sessionIds.userId
+      }
+    ]);
+    // Fetch diagnostic test for the selected course
+    // You may want to pass the courseKey as a topic to the API if supported
+    await learnWindow.handleStartDiagnosticTest(courseKey);
+  };
+
+  // Show course list as a persistent chat message on first open of Learning Center
+  useEffect(() => {
+    if (currentWindow === 'learn' && !learnHasShownCourseList) {
+      setLearnMessages(prev => [
+        ...prev,
+        {
+          id: 'learn-courses-list',
+          type: 'assistant',
+          content: 'Please select a course to get started:',
+          timestamp: new Date().toISOString(),
+          sessionId: sessionIds.sessionId,
+          userId: sessionIds.userId,
+          metadata: {
+            buttons: LEARN_COURSES.map(course => ({
+              label: course.label,
+              action: () => handleLearnCourseTopicSelect(course.key, course.label)
+            }))
+          }
+        }
+      ]);
+      setLearnHasShownCourseList(true);
+    }
+  }, [currentWindow, learnHasShownCourseList, sessionIds.sessionId, sessionIds.userId]);
+
+  useEffect(() => {
+    // Listen for recommended course start event
+    const handler = (e: any) => {
+      const course = e.detail;
+      if (course && course.id) {
+        // Start the recommended course using the course ID
+        learnWindow.handleStartCourse(course.id);
+      }
+    };
+    window.addEventListener('start-recommended-course', handler);
+    return () => window.removeEventListener('start-recommended-course', handler);
+  }, [learnWindow]);
 
   return (
-    <div className={`chat-widget-container ${position} open ${isExpanded ? 'expanded' : ''}`}>
-      <div className={`chat-widget ${theme} ${isExpanded ? 'expanded' : ''}`}>
+    <div className={`chat-app ${theme}`}>
+      {/* Sidebar */}
+      <Sidebar
+        sidebarState={sidebarHook.sidebarState}
+        setSidebarState={sidebarHook.setSidebarState}
+        chatSessions={chatSessions}
+        userProfile={profileHook.userProfile}
+        profileModalState={profileHook.profileModalState}
+        setProfileModalState={profileHook.setProfileModalState}
+        onSessionSelect={handleSessionSelect}
+        onNewChat={handleNewChat}
+        onProfileUpdate={profileHook.updateProfile}
+        theme={theme}
+      />
+
+      <div className={`chat-widget ${theme} ${position}`}>
         <div className="chat-header">
-          <h3>💰 MoneyMentor</h3>
-          {currentWindow === 'chat' && (
-            <div className="quiz-progress-simple" style={{ position: 'relative' }}>
-              <button
-                ref={quizTrackerRef}
-                className="quiz-progress-simple-btn"
-                onClick={() => {
-                  console.log('Quiz tracker clicked, current state:', showQuizDropdown);
-                  setShowQuizDropdown((prev) => {
-                    console.log('Setting showQuizDropdown to:', !prev);
-                    return !prev;
-                  });
-                }}
-                title="View quiz history"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-              >
-                <span className="quiz-progress-simple-text">
-                  {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
-                </span>
-              </button>
-              <QuizHistoryDropdown
-                open={showQuizDropdown}
-                onClose={() => setShowQuizDropdown(false)}
-                anchorRef={quizTrackerRef}
-                quizHistory={chatQuizHistory}
-              />
-            </div>
-          )}
-          <div className="chat-header-buttons">
-            <button 
-              onClick={() => setIsExpanded(!isExpanded)}
-              title={isExpanded ? 'Minimize' : 'Maximize'}
-            >
-              {isExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </button>
-            <button 
-              onClick={() => setIsOpen(false)}
-              title="Close"
-            >
-              <X size={18} />
-            </button>
+          <div className="header-left">
+            <SidebarToggle 
+              isOpen={sidebarHook.sidebarState.isOpen}
+              onClick={sidebarHook.toggleSidebar}
+            />
+            <h3>💰 MoneyMentor</h3>
           </div>
+          <div className="mode-navigation-centered">
+            <div className="mode-navigation-glass">
+              <button
+                className={`mode-btn ${currentWindow === 'chat' ? 'active' : ''}`}
+                onClick={() => setCurrentWindow('chat')}
+              >
+                <span className="mode-icon">💬</span>
+                <span className="mode-text">Chat</span>
+              </button>
+              <button 
+                className={`mode-btn ${currentWindow === 'learn' ? 'active' : ''}`}
+                onClick={() => setCurrentWindow('learn')}
+              >
+                <span className="mode-icon">🎓</span>
+                <span className="mode-text">Learn</span>
+              </button>
+            </div>
+          </div>
+          <div className="header-spacer"></div>
         </div>
 
         {/* Upload Progress Indicator Component */}
         <UploadProgressIndicator uploadProgress={uploadProgress} />
 
-        {/* Uploaded Files Display Component */}
+        {/* Uploaded Files Display Component - only show when there are files */}
+        {uploadedFiles.length > 0 && (
         <UploadedFilesDisplay 
           uploadedFiles={uploadedFiles}
-          onRemoveFile={() => {}}
+            onRemoveFile={handleChatRemoveFile}
         />
+        )}
 
         {/* Windows Component */}
         <Windows
@@ -942,17 +980,34 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           onNavigateToChat={() => setCurrentWindow('chat')}
           onNavigateToLearn={() => setCurrentWindow('learn')}
           onNavigateToIntro={() => setCurrentWindow('intro')}
-          isExpanded={isExpanded}
+          isExpanded={true}
           hasUploads={uploadProgress.isUploading || uploadedFiles.length > 0}
+          showQuizDropdown={showQuizDropdown}
+          onToggleQuizDropdown={() => setShowQuizDropdown(prev => !prev)}
+          onCloseQuizDropdown={() => setShowQuizDropdown(false)}
+          quizTrackerRef={quizTrackerRef}
+          chatQuizCorrectAnswered={chatQuizCorrectAnswered}
+          chatQuizTotalAnswered={chatQuizTotalAnswered}
+          chatQuizHistory={chatQuizHistory}
+          QuizHistoryDropdown={QuizHistoryDropdown}
           chatChildren={
-            <>
-              {/* Chat Window Content */}
+            <div className="chat-window">
+              {/* Chat Messages Container with Scrollbar */}
+              <div className="chat-messages-container">
         <div className="chat-messages">
                 {chatMessages.map((message) => (
             <div key={message.id} className={`message ${message.type}`}>
+                      {message.type === 'assistant' ? (
+                        <BotMessage
+                          content={message.content}
+                          onCopy={undefined}
+                          messageId={message.id}
+                        />
+                      ) : (
               <div className="message-content">
                 {formatMessageContent(message.content)}
               </div>
+                      )}
               {/* Display buttons if present */}
               {message.metadata?.buttons && (
                 <MessageButtons buttons={message.metadata.buttons} />
@@ -969,7 +1024,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
               </div>
             </div>
           ))}
-          
           {/* Diagnostic Test Component */}
           <DiagnosticTest
                   isDiagnosticMode={chatIsDiagnosticMode}
@@ -980,7 +1034,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   diagnosticTotalQuestions={chatDiagnosticTotalQuestions}
                   onDiagnosticQuizAnswer={handleChatDiagnosticQuizAnswer}
           />
-
           {/* Quiz Component */}
           <Quiz
                   currentQuiz={chatCurrentQuiz}
@@ -989,22 +1042,22 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   isDiagnosticMode={chatIsDiagnosticMode}
                   onQuizAnswer={handleChatQuizAnswer}
           />
-
           {/* Course List Component */}
           <CourseList
                   showCourseList={chatShowCourseList}
                   availableCourses={chatAvailableCourses}
                   onStartCourse={handleChatStartCourse}
           />
-
-          {/* Course Page Component */}
+          {/* Course Page Component (only for non-quiz pages) */}
+          {chatCourseQuiz == null && chatCurrentCoursePage && (
           <CoursePageComponent
                   currentCoursePage={chatCurrentCoursePage}
                   onNavigateCoursePage={handleChatNavigateCoursePage}
                   onCompleteCourse={handleChatCompleteCourse}
           />
-
-          {/* Course Quiz Component */}
+          )}
+          {/* Course Quiz Component (for quiz pages) */}
+          {chatCourseQuiz && (
           <CourseQuiz
                   courseQuiz={chatCourseQuiz}
                   courseQuizAnswers={chatCourseQuizAnswers}
@@ -1013,16 +1066,15 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   onSubmitCourseQuiz={handleChatSubmitCourseQuiz}
                   areAllQuestionsAnswered={(answers) => areAllQuestionsAnswered(answers)}
                 />
-                
+          )}
                 {chatIsLoading && (
             <div className="message assistant">
               <div className="message-content">Thinking...</div>
             </div>
           )}
-          
           <div ref={messagesEndRef} />
         </div>
-
+              </div>
         {/* Chat Input Component */}
         <ChatInput
                 inputValue={chatInputValue}
@@ -1041,21 +1093,27 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           onCloseCommandMenu={() => {}}
                 disabled={currentWindow === 'intro'}
               />
-            </>
+            </div>
           }
           learnChildren={
-            <>
+            <div className="chat-window">
               {/* Learn Window Content */}
-              <div className="chat-messages">
+              <div className="chat-messages-container">
+              <div className="chat-messages" style={{ paddingBottom: '20px', marginBottom: '20px' }}>
                 {learnMessages.map((message) => (
                   <div key={message.id} className={`message ${message.type}`}>
                     <div className="message-content">
                       {formatMessageContent(message.content)}
-                    </div>
-                    {/* Display buttons if present */}
+                        {/* Render buttons if present in metadata */}
                     {message.metadata?.buttons && (
-                      <MessageButtons buttons={message.metadata.buttons} />
-                    )}
+                          <div className="message-buttons">
+                            {message.metadata.buttons.map((btn, idx) => (
+                              <button key={idx} className="message-button" onClick={btn.action}>{btn.label}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* Only render MessageButtons if not already rendered above */}
                     {/* Display calculation result if present */}
                     {message.metadata?.calculationResult && (
                       <CalculationResult result={message.metadata.calculationResult} />
@@ -1068,7 +1126,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     </div>
                   </div>
                 ))}
-                
                 {/* Learn Diagnostic Test Component */}
                 <DiagnosticTest
                   isDiagnosticMode={learnIsDiagnosticMode}
@@ -1079,7 +1136,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   diagnosticTotalQuestions={learnDiagnosticTotalQuestions}
                   onDiagnosticQuizAnswer={handleLearnDiagnosticQuizAnswer}
                 />
-
                 {/* Learn Quiz Component */}
                 <Quiz
                   currentQuiz={learnCurrentQuiz}
@@ -1088,22 +1144,22 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   isDiagnosticMode={learnIsDiagnosticMode}
                   onQuizAnswer={handleLearnQuizAnswer}
                 />
-
                 {/* Learn Course List Component */}
                 <CourseList
                   showCourseList={learnShowCourseList}
                   availableCourses={learnAvailableCourses}
                   onStartCourse={handleLearnStartCourse}
                 />
-
-                {/* Learn Course Page Component */}
+                {/* Learn Course Page Component (only for non-quiz pages) */}
+                {learnCourseQuiz == null && learnCurrentCoursePage && (
                 <CoursePageComponent
                   currentCoursePage={learnCurrentCoursePage}
                   onNavigateCoursePage={handleLearnNavigateCoursePage}
                   onCompleteCourse={handleLearnCompleteCourse}
                 />
-
-                {/* Learn Course Quiz Component */}
+                )}
+                {/* Learn Course Quiz Component (for quiz pages) */}
+                {learnCourseQuiz && (
                 <CourseQuiz
                   courseQuiz={learnCourseQuiz}
                   courseQuizAnswers={learnCourseQuizAnswers}
@@ -1112,26 +1168,16 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   onSubmitCourseQuiz={handleLearnSubmitCourseQuiz}
                   areAllQuestionsAnswered={(answers) => areAllQuestionsAnswered(answers)}
                 />
-                
+                )}
                 {learnIsLoading && (
                   <div className="message assistant">
                     <div className="message-content">Thinking...</div>
                   </div>
                 )}
-                
                 <div ref={messagesEndRef} />
               </div>
-
-              {/* Learn Command Input Component */}
-              <CommandInput
-          showCommandMenu={showCommandMenu}
-          availableCommands={availableCommands}
-          activeMode={activeMode}
-          onCommandSelect={handleCommandSelect}
-          onToggleCommandMenu={() => setShowCommandMenu(!showCommandMenu)}
-                disabled={false}
-              />
-            </>
+              </div>
+            </div>
           }
         />
       </div>

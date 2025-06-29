@@ -7,8 +7,8 @@ export interface ApiConfig {
 }
 
 // Get environment variables
-const BACKEND_URL = import.meta.env.VITE_BACKEND;
-const BACKEND_TWO_URL = import.meta.env.VITE_BACKEND_TWO;
+const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
+const BACKEND_TWO_URL = 'https://backend-2-647308514289.us-central1.run.app';
 
 // Chat API calls - Using port 8000
 export const sendChatMessage = async (
@@ -96,19 +96,28 @@ export const logQuizAnswer = async (
   correct: boolean,
   topicTag: string
 ): Promise<void> => {
-  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/log`, {
+  // Convert selectedOption number to letter (0->A, 1->B, 2->C, 3->D)
+  const optionLetters = ['A', 'B', 'C', 'D'];
+  const selectedLetter = optionLetters[selectedOption] || 'A';
+  
+  // Use Python backend for Google Sheets logging
+  const response = await fetch(`${BACKEND_URL}/api/quiz/submit`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      userId: config.userId,
-      sessionId: config.sessionId,
-      timestamp: new Date().toISOString(),
-      quizId,
-      selectedOption,
-      correct,
-      topicTag
+      user_id: config.userId,
+      quiz_type: "micro",
+      session_id: config.sessionId,
+      responses: [
+        {
+          quiz_id: quizId,
+          selected_option: selectedLetter,
+          correct: correct,
+          topic: topicTag
+        }
+      ]
     })
   });
 
@@ -117,11 +126,11 @@ export const logQuizAnswer = async (
   }
 };
 
-// Course API calls - Using port 3000
+// Course API calls - Using new course service endpoints
 export const getAvailableCourses = async (
   config: ApiConfig
 ): Promise<any> => {
-  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/courses?userId=${config.userId}&sessionId=${config.sessionId}`, {
+  const response = await fetch(`${BACKEND_URL}/api/course/user/${config.userId}/sessions`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -138,13 +147,13 @@ export const startCourse = async (
   config: ApiConfig,
   courseId: string
 ): Promise<any> => {
-  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/start`, {
+  const response = await fetch(`${BACKEND_URL}/api/course/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
-      userId: config.userId, 
-      sessionId: config.sessionId, 
-      courseId 
+      user_id: config.userId, 
+      session_id: config.sessionId, 
+      course_id: courseId 
     })
   });
 
@@ -157,14 +166,17 @@ export const startCourse = async (
 
 export const navigateCoursePage = async (
   config: ApiConfig,
+  courseId: string,
   pageIndex: number
 ): Promise<any> => {
-  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/navigate`, {
+  const response = await fetch(`${BACKEND_URL}/api/course/navigate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
-      sessionId: config.sessionId, 
-      pageIndex 
+      user_id: config.userId,
+      session_id: config.sessionId,
+      course_id: courseId,
+      page_index: pageIndex 
     })
   });
 
@@ -177,19 +189,63 @@ export const navigateCoursePage = async (
 
 export const submitCourseQuiz = async (
   config: ApiConfig,
-  answers: number[]
+  courseId: string,
+  pageIndex: number,
+  selectedOption: string,
+  correct: boolean
 ): Promise<any> => {
-  const response = await fetch(`${BACKEND_TWO_URL}/api/chat/course/quiz`, {
+  const response = await fetch(`${BACKEND_URL}/api/course/quiz/submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
-      sessionId: config.sessionId, 
-      answers 
+      user_id: config.userId,
+      session_id: config.sessionId,
+      course_id: courseId,
+      page_index: pageIndex,
+      selected_option: selectedOption,
+      correct
     })
   });
 
   if (!response.ok) {
     throw new Error('Failed to submit course quiz');
+  }
+
+  return response.json();
+};
+
+export const completeCourse = async (
+  config: ApiConfig,
+  courseId: string
+): Promise<any> => {
+  const response = await fetch(`${BACKEND_URL}/api/course/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      user_id: config.userId,
+      session_id: config.sessionId,
+      course_id: courseId
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to complete course');
+  }
+
+  return response.json();
+};
+
+export const getCourseDetails = async (
+  config: ApiConfig,
+  courseId: string
+): Promise<any> => {
+  const response = await fetch(`${BACKEND_URL}/api/course/${courseId}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' }
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to get course details');
   }
 
   return response.json();
@@ -274,16 +330,23 @@ export const getDiagnosticQuestion = async (
 
 // New: Generate Diagnostic Quiz (POST /api/quiz/generate)
 export const generateDiagnosticQuiz = async (
-  config: ApiConfig
+  config: ApiConfig,
+  topic?: string
 ): Promise<{ questions: QuizQuestion[]; quizId: string }> => {
+  const requestBody: any = {
+    session_id: config.sessionId,
+    quiz_type: 'diagnostic'
+  };
+  
+  // Add topic if provided
+  if (topic) {
+    requestBody.topic = topic;
+  }
+
   const response = await fetch(`${BACKEND_URL}/api/quiz/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      session_id: config.sessionId,
-      quiz_type: 'diagnostic',
-      // Optionally add difficulty if needed
-    })
+    body: JSON.stringify(requestBody)
   });
 
   if (!response.ok) {
@@ -313,12 +376,18 @@ export const submitDiagnosticQuiz = async (
   userId: string
 ): Promise<any> => {
   // Prepare responses array for backend
-  const responses = questions.map((q, idx) => ({
+  const responses = questions.map((q, idx) => {
+    const answerIdx = answers[idx];
+    if (answerIdx < 0 || answerIdx > 3) {
+      throw new Error('All questions must be answered before submitting.');
+    }
+    return {
     quiz_id: quizId,
-    selected_option: String.fromCharCode(65 + answers[idx]), // 'A', 'B', ...
-    correct: answers[idx] === q.correctAnswer,
+      selected_option: String.fromCharCode(65 + answerIdx), // 'A', 'B', 'C', 'D'
+      correct: answerIdx === q.correctAnswer,
     topic: q.topicTag || '',
-  }));
+    };
+  });
 
   const response = await fetch(`${BACKEND_URL}/api/quiz/submit`, {
     method: 'POST',

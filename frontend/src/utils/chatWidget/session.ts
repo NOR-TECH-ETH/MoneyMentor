@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { STORAGE_KEYS } from '../../types';
 
 // Get environment variables
-const BACKEND_URL = import.meta.env.VITE_BACKEND;
+const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
 
 export interface SessionIds {
   userId: string;

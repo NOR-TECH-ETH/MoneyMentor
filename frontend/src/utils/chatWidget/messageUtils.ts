@@ -26,7 +26,7 @@ export const createWelcomeMessage = (
   userId: string,
 ): ChatMessage => ({
   ...createMessage(
-    "👋 Welcome to MoneyMentor! I'm here to help you with financial literacy.\n\n🎯 **Quick Start Options:**\n• Press `Courses` button to see available learning courses\n• Press `Diagnostic test` button for personalized course recommendations\n• Press `Chat` button for regular financial Q&A\n• Just ask me any financial question to get started!\n\nWhat would you like to explore first?",
+    "👋 Welcome to **Chat Mode**! I'm your AI financial assistant.\n\n🎯 **What I can help you with:**\n• **Ask questions** about budgeting, saving, investing, debt, and more\n• **Take quizzes** to test your knowledge and learn new concepts\n•",
     'assistant',
     sessionId,
     userId

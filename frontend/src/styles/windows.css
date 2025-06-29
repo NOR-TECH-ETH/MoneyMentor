@@ -319,3 +319,249 @@
 .chat-widget.dark .nav-button:hover {
   background: #4b5563;
 } 
+
+/* Mobile Responsiveness for Windows */
+@media (max-width: 768px) {
+  /* Intro Window Mobile Optimization */
+  .intro-window {
+    padding: 16px;
+  }
+
+  .intro-content {
+    max-width: 100%;
+  }
+
+  .intro-content h2 {
+    font-size: 20px;
+    margin-bottom: 8px;
+  }
+
+  .intro-content p {
+    font-size: 14px;
+    margin-bottom: 24px;
+    line-height: 1.5;
+  }
+
+  .intro-buttons {
+    gap: 16px;
+  }
+
+  .intro-button {
+    padding: 16px;
+    border-radius: 10px;
+  }
+
+  .intro-icon {
+    font-size: 28px;
+    margin-right: 12px;
+  }
+
+  .intro-text h3 {
+    font-size: 16px;
+  }
+
+  .intro-text p {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  /* Learn Window Mobile Optimization */
+  .learn-window {
+    padding: 16px;
+  }
+
+  .learn-content h2 {
+    font-size: 20px;
+    margin-bottom: 8px;
+  }
+
+  .learn-content p {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* Navigation Mobile Optimization */
+  .window-navigation {
+    padding: 6px 10px;
+    gap: 6px;
+    border-radius: 20px;
+  }
+
+  .nav-button {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+  }
+
+  .nav-button:hover {
+    transform: scale(1.02);
+  }
+}
+
+@media (max-width: 480px) {
+  /* Intro Window Small Mobile */
+  .intro-window {
+    padding: 12px;
+  }
+
+  .intro-content h2 {
+    font-size: 18px;
+  }
+
+  .intro-content p {
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+
+  .intro-buttons {
+    gap: 12px;
+  }
+
+  .intro-button {
+    padding: 14px;
+    border-radius: 8px;
+  }
+
+  .intro-icon {
+    font-size: 24px;
+    margin-right: 10px;
+  }
+
+  .intro-text h3 {
+    font-size: 15px;
+  }
+
+  .intro-text p {
+    font-size: 12px;
+  }
+
+  /* Learn Window Small Mobile */
+  .learn-window {
+    padding: 12px;
+  }
+
+  .learn-content h2 {
+    font-size: 18px;
+  }
+
+  .learn-content p {
+    font-size: 13px;
+  }
+
+  /* Navigation Small Mobile */
+  .window-navigation {
+    padding: 5px 8px;
+    gap: 5px;
+    border-radius: 18px;
+  }
+
+  .nav-button {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 360px) {
+  /* Intro Window Extra Small Mobile */
+  .intro-window {
+    padding: 10px;
+  }
+
+  .intro-content h2 {
+    font-size: 16px;
+  }
+
+  .intro-content p {
+    font-size: 12px;
+    margin-bottom: 18px;
+  }
+
+  .intro-button {
+    padding: 12px;
+  }
+
+  .intro-icon {
+    font-size: 20px;
+    margin-right: 8px;
+  }
+
+  .intro-text h3 {
+    font-size: 14px;
+  }
+
+  .intro-text p {
+    font-size: 11px;
+  }
+
+  /* Learn Window Extra Small Mobile */
+  .learn-window {
+    padding: 10px;
+  }
+
+  .learn-content h2 {
+    font-size: 16px;
+  }
+
+  .learn-content p {
+    font-size: 12px;
+  }
+
+  /* Navigation Extra Small Mobile */
+  .window-navigation {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+
+  .nav-button {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+}
+
+/* Dark theme mobile adjustments */
+.chat-widget.dark .intro-window,
+.chat-widget.dark .learn-window {
+  background: #1f2937;
+  color: white;
+}
+
+.chat-widget.dark .intro-content h2,
+.chat-widget.dark .learn-content h2 {
+  color: white;
+}
+
+.chat-widget.dark .intro-content p,
+.chat-widget.dark .learn-content p {
+  color: #d1d5db;
+}
+
+.chat-widget.dark .intro-button {
+  background: #374151;
+  border-color: #4b5563;
+  color: white;
+}
+
+.chat-widget.dark .intro-button:hover {
+  background: #4b5563;
+  border-color: #6b7280;
+}
+
+.chat-widget.dark .intro-text h3,
+.chat-widget.dark .intro-text p {
+  color: white;
+}
+
+.chat-widget.dark .window-navigation {
+  background: rgba(31, 41, 55, 0.95);
+}
+
+.chat-widget.dark .nav-button {
+  background: #374151;
+  color: white;
+}
+
+.chat-widget.dark .nav-button:hover {
+  background: #4b5563;
+} 

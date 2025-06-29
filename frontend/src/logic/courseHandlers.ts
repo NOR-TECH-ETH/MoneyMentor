@@ -13,22 +13,48 @@ import {
   initializeCourseQuiz,
   initializeCourseQuizAnswers,
   CourseQuizState,
-  CourseQuizAnswers
+  CourseQuizAnswers,
+  completeCourse,
+  getCourseDetails
 } from '../utils/chatWidget';
+import { createAssistantMessage } from '../utils/chatWidget/messageUtils';
 
 export interface CourseHandlersProps {
   apiConfig: ApiConfig;
   sessionIds: { userId: string; sessionId: string };
-  addMessage: (message: ChatMessage) => void;
+  addMessage: (message: any) => void;
   setIsLoading: (loading: boolean) => void;
   closeCurrentDisplays: () => void;
   setAvailableCourses: (courses: Course[]) => void;
   setShowCourseList: (show: boolean) => void;
   setCurrentCoursePage: (page: CoursePage | null) => void;
   setCurrentCourse: (course: Course | null) => void;
-  setCourseQuiz: (quiz: CourseQuizState | null) => void;
-  setCourseQuizAnswers: (answers: CourseQuizAnswers) => void;
+  setCourseQuiz: (quiz: any) => void;
+  setCourseQuizAnswers: (answers: any) => void;
   removeIntroMessage: (pattern: string) => void;
+}
+
+// Utility to normalize backend quiz_data to frontend format
+function normalizeQuizQuestion(raw: any): any {
+  if (!raw) return null;
+  // If already in frontend format, return as is
+  if (Array.isArray(raw.options)) return raw;
+  // Convert choices object to options array
+  if (raw.choices && typeof raw.choices === 'object') {
+    const options = Object.values(raw.choices);
+    // Map correct_answer (a/b/c/d) to index
+    const correctAnswer = ['a', 'b', 'c', 'd'].indexOf(raw.correct_answer);
+    return {
+      id: raw.id || '',
+      question: raw.question,
+      options,
+      correctAnswer,
+      explanation: raw.explanation || '',
+      topicTag: raw.topic || '',
+      difficulty: raw.difficulty || 'medium',
+    };
+  }
+  return raw;
 }
 
 export const handleCoursesList = async (props: CourseHandlersProps) => {
@@ -86,125 +112,370 @@ export const handleStartCourse = async (
     apiConfig,
     sessionIds,
     addMessage,
+    setIsLoading,
+    closeCurrentDisplays,
     setCurrentCoursePage,
     setCurrentCourse,
-    setShowCourseList
+    setCourseQuiz,
+    setCourseQuizAnswers
   } = props;
 
   try {
-    const response = await startCourse(apiConfig, courseId);
+    setIsLoading(true);
+    closeCurrentDisplays();
     
-    if (response.success && response.data.currentPage) {
-      setCurrentCoursePage(response.data.currentPage);
-      setCurrentCourse(response.data.courseSession.activeCourse);
-      setShowCourseList(false);
-      
-      const startMessage = createSystemMessage(
-        formatCourseStartMessage(response.data.courseSession.activeCourse.title),
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-      addMessage(startMessage);
+    // Start the course with retry mechanism
+    let result;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        result = await startCourse(apiConfig, courseId);
+        if (result.success) {
+          break; // Success, exit retry loop
+        } else if (result.message && (result.message.includes('not found') || result.message.includes('properly registered'))) {
+          // Course might still be registering, wait and retry
+          if (retryCount < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+            retryCount++;
+            continue;
+          }
+        }
+        throw new Error(result.message || 'Failed to start course');
+      } catch (error) {
+        if (retryCount < maxRetries - 1 && error instanceof Error && 
+            (error.message.includes('not found') || error.message.includes('properly registered'))) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
+          retryCount++;
+          continue;
+        }
+        throw error;
+      }
     }
+    
+    if (result.success) {
+      // Get course details
+      const courseDetails = await getCourseDetails(apiConfig, courseId);
+      
+      if (courseDetails.success) {
+        const courseData = courseDetails.data;
+        
+        // Set current course
+        const course: Course = {
+          id: courseData.id,
+          title: courseData.title,
+          description: courseData.lesson_overview,
+          difficulty: courseData.course_level as 'beginner' | 'intermediate' | 'advanced',
+          topicTag: courseData.topic,
+          estimatedTime: courseData.estimated_length,
+          pages: [], // Will be populated as user navigates
+          quizQuestions: []
+        };
+        
+        setCurrentCourse(course);
+        
+        // Set current page or quiz
+        if (result.data && result.data.current_page) {
+          const pageData = result.data.current_page;
+          
+          if (pageData.page_type === 'quiz' && pageData.quiz_data) {
+            // Quiz page: initialize course quiz state
+            const quizQuestions = Array.isArray(pageData.quiz_data)
+              ? pageData.quiz_data.map(normalizeQuizQuestion)
+              : [normalizeQuizQuestion(pageData.quiz_data)];
+            const courseQuizState = {
+              questions: quizQuestions,
+              currentQuestion: 0,
+              score: 0,
+              attempts: 0,
+              pageIndex: pageData.page_index,
+              totalPages: pageData.total_pages || 1
+            };
+            
+            setCurrentCoursePage(null);
+            setCourseQuiz(courseQuizState);
+            setCourseQuizAnswers(initializeCourseQuizAnswers(quizQuestions.length));
+            
+            // Course start message removed per user request
+          } else {
+            // Content page
+            const page: CoursePage = {
+              id: pageData.id,
+              title: pageData.title,
+              content: pageData.content,
+              pageNumber: pageData.page_index + 1,
+              totalPages: pageData.total_pages || 1,
+              pageType: pageData.page_type,
+              quizData: pageData.quiz_data
+            };
+            setCurrentCoursePage(page);
+            // Course start message removed per user request
+          }
+        } else {
+          console.error('No current_page data in result:', result); // Debug log
+        }
+      } else {
+        console.error('Failed to get course details:', courseDetails); // Debug log
+      }
+    } else {
+      throw new Error(result.message || 'Failed to start course');
+    }
+    
   } catch (error) {
-    console.error('Error starting course:', error);
+    let errorMsg = 'Sorry, there was an error starting the course. Please try again.';
+    
+    // Check for specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('Course not found')) {
+        errorMsg = 'The requested course could not be found. It may still be being prepared. Please try again in a moment.';
+      } else if (error.message.includes('Course pages not found')) {
+        errorMsg = 'The course content is still being prepared. Please try again in a moment.';
+      } else if (error.message.includes('properly registered')) {
+        errorMsg = 'The course is still being set up. Please wait a moment and try again.';
+      }
+    }
+    
     const errorMessage = createSystemMessage(
-      'Failed to start course. Please try again.',
+      errorMsg,
       sessionIds.sessionId,
       sessionIds.userId
     );
     addMessage(errorMessage);
+  } finally {
+    setIsLoading(false);
   }
 };
 
 export const handleNavigateCoursePage = async (
+  courseId: string,
   pageIndex: number,
   props: CourseHandlersProps
 ) => {
   const {
     apiConfig,
-    setCurrentCoursePage
+    sessionIds,
+    addMessage,
+    setIsLoading,
+    setCurrentCoursePage,
+    setCurrentCourse,
+    setCourseQuiz,
+    setCourseQuizAnswers
   } = props;
 
   try {
-    const response = await navigateCoursePage(apiConfig, pageIndex);
+    setIsLoading(true);
     
-    if (response.success && response.data.page) {
-      setCurrentCoursePage(response.data.page);
+    // Navigate to the page
+    const result = await navigateCoursePage(apiConfig, courseId, pageIndex);
+    
+    if (result.success) {
+      // Set current page or quiz
+      if (result.data && result.data.current_page) {
+        const pageData = result.data.current_page;
+        if (pageData.page_type === 'quiz' && pageData.quiz_data) {
+          // Quiz page: initialize course quiz state
+          const quizQuestions = Array.isArray(pageData.quiz_data)
+            ? pageData.quiz_data.map(normalizeQuizQuestion)
+            : [normalizeQuizQuestion(pageData.quiz_data)];
+          const courseQuizState = {
+            questions: quizQuestions,
+            currentQuestion: 0,
+            score: 0,
+            attempts: 0,
+            pageIndex: pageData.page_index,
+            totalPages: pageData.total_pages || 1
+          };
+          setCurrentCoursePage(null);
+          setCourseQuiz(courseQuizState);
+          setCourseQuizAnswers(initializeCourseQuizAnswers(quizQuestions.length));
+          
+          // Course start message removed per user request
+        } else {
+          // Content page
+          const page: CoursePage = {
+            id: pageData.id,
+            title: pageData.title,
+            content: pageData.content,
+            pageNumber: pageData.page_index + 1,
+            totalPages: pageData.total_pages || 1,
+            pageType: pageData.page_type,
+            quizData: pageData.quiz_data
+          };
+          setCurrentCoursePage(page);
+          // Course start message removed per user request
+        }
+      }
+    } else {
+      throw new Error(result.message || 'Failed to navigate course page');
     }
-  } catch (error) {
-    console.error('Error navigating course:', error);
-  }
-};
-
-export const handleCompleteCourse = (
-  currentCourse: Course | null,
-  props: CourseHandlersProps
-) => {
-  const {
-    sessionIds,
-    addMessage,
-    setCourseQuiz,
-    setCourseQuizAnswers,
-    setCurrentCoursePage
-  } = props;
-
-  if (currentCourse) {
-    setCourseQuiz(initializeCourseQuiz(currentCourse));
-    setCourseQuizAnswers(initializeCourseQuizAnswers(currentCourse.quizQuestions.length));
-    setCurrentCoursePage(null);
     
-    const completionMessage = createSystemMessage(
-      formatCourseCompletionMessage(),
+  } catch (error) {
+    let errorMsg = 'Sorry, there was an error navigating the course. Please try again.';
+    
+    // Check for specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('Course not found')) {
+        errorMsg = 'The requested course could not be found. It may still be being prepared. Please try again in a moment.';
+      } else if (error.message.includes('Page') && error.message.includes('not found')) {
+        errorMsg = 'The requested page could not be found. The course content may still be being prepared. Please try again in a moment.';
+      } else if (error.message.includes('properly registered')) {
+        errorMsg = 'The course is still being set up. Please wait a moment and try again.';
+      }
+    }
+    
+    const errorMessage = createSystemMessage(
+      errorMsg,
       sessionIds.sessionId,
       sessionIds.userId
     );
-    addMessage(completionMessage);
+    addMessage(errorMessage);
+  } finally {
+    setIsLoading(false);
   }
 };
 
 export const handleSubmitCourseQuiz = async (
-  courseQuiz: CourseQuizState | null,
-  courseQuizAnswers: CourseQuizAnswers,
+  courseId: string,
+  pageIndex: number,
+  selectedOption: string,
+  correct: boolean,
+  props: CourseHandlersProps,
+  currentTotalPages?: number  // Add optional parameter to preserve total pages
+) => {
+  const {
+    apiConfig,
+    sessionIds,
+    addMessage,
+    setIsLoading,
+    setCurrentCoursePage,
+    setCourseQuiz,
+    setCourseQuizAnswers
+  } = props;
+
+  try {
+    setIsLoading(true);
+    
+    // Submit quiz answer
+    const result = await submitCourseQuiz(apiConfig, courseId, pageIndex, selectedOption, correct);
+    
+    if (result.success) {
+      // Clear quiz state first
+      setCourseQuiz(null);
+      setCourseQuizAnswers(initializeCourseQuizAnswers(0));
+      
+      // Feedback message removed - quiz component shows its own summary now
+      
+      // Navigate to next page if available
+      if (result.next_page) {
+        const pageData = result.next_page;
+        // Use currentTotalPages as fallback if backend doesn't return correct total_pages
+        const totalPages = pageData.total_pages || currentTotalPages || 1;
+        
+        if (pageData.page_type === 'quiz' && pageData.quiz_data) {
+          // Next page is also a quiz
+          const quizQuestions = Array.isArray(pageData.quiz_data)
+            ? pageData.quiz_data.map(normalizeQuizQuestion)
+            : [normalizeQuizQuestion(pageData.quiz_data)];
+          const courseQuizState = {
+            questions: quizQuestions,
+            currentQuestion: 0,
+            score: 0,
+            attempts: 0,
+            pageIndex: pageData.page_index,
+            totalPages: totalPages
+          };
+    setCurrentCoursePage(null);
+          setCourseQuiz(courseQuizState);
+          setCourseQuizAnswers(initializeCourseQuizAnswers(quizQuestions.length));
+          
+          // Course start message removed per user request
+        } else {
+          // Next page is content
+          const page: CoursePage = {
+            id: pageData.id,
+            title: pageData.title,
+            content: pageData.content,
+            pageNumber: pageData.page_index + 1,
+            totalPages: totalPages,
+            pageType: pageData.page_type,
+            quizData: pageData.quiz_data
+          };
+          setCurrentCoursePage(page);
+          
+          // Course start message removed per user request
+        }
+      } else {
+        // No next page - course might be complete
+        const completionMessage = createSystemMessage(
+          `🎉 **Quiz completed!** You've reached the end of this course section.`,
+          sessionIds.sessionId,
+          sessionIds.userId
+        );
+        addMessage(completionMessage);
+      }
+    } else {
+      throw new Error(result.message || 'Failed to submit quiz answer');
+    }
+    
+  } catch (error) {
+    const errorMessage = createSystemMessage(
+      'Sorry, there was an error submitting your answer. Please try again.',
+      sessionIds.sessionId,
+      sessionIds.userId
+    );
+    addMessage(errorMessage);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+export const handleCompleteCourse = async (
+  courseId: string,
   props: CourseHandlersProps
 ) => {
   const {
     apiConfig,
     sessionIds,
     addMessage,
-    setCourseQuiz,
-    setCourseQuizAnswers,
-    setCurrentCourse
+    setIsLoading,
+    closeCurrentDisplays
   } = props;
 
-  if (!courseQuiz) return;
-  
   try {
-    const response = await submitCourseQuiz(apiConfig, courseQuizAnswers.answers);
+    setIsLoading(true);
     
-    if (response.success) {
-      const { score, passed, explanations } = response.data;
-      const resultMessage = formatQuizResultMessage(score, passed, explanations);
+    // Complete the course
+    const result = await completeCourse(apiConfig, courseId);
+    
+    if (result.success) {
+      closeCurrentDisplays();
       
-      const message = createSystemMessage(
-        resultMessage,
+      // Show completion message
+      const completionMessage = createSystemMessage(
+        `🎉 **Course Completed!**
+
+${result.data.completion_summary ? 
+          `📊 **Final Score:** ${result.data.completion_summary.score}%
+
+` : 
+          ''}Congratulations on completing the course! You've taken an important step toward improving your financial knowledge.`,
         sessionIds.sessionId,
         sessionIds.userId
       );
-      addMessage(message);
-      
-      const resetState = resetCourseQuizState();
-      setCourseQuiz(resetState.quiz);
-      setCourseQuizAnswers(resetState.answers);
-      setCurrentCourse(null);
+      addMessage(completionMessage);
+    } else {
+      throw new Error(result.message || 'Failed to complete course');
     }
+    
   } catch (error) {
-    console.error('Error submitting course quiz:', error);
     const errorMessage = createSystemMessage(
-      'Failed to submit quiz. Please try again.',
+      'Sorry, there was an error completing the course. Please try again.',
       sessionIds.sessionId,
       sessionIds.userId
     );
     addMessage(errorMessage);
+  } finally {
+    setIsLoading(false);
   }
 }; 

@@ -10,9 +10,11 @@ import {
   setupDiagnosticTest, 
   handleDiagnosticAnswer, 
   goToNextQuestion, 
-  resetDiagnosticState 
+  resetDiagnosticState,
+  initializeDiagnosticState
 } from '../utils/chatWidget/diagnosticUtils';
 import { DiagnosticState } from '../utils/chatWidget';
+import { submitDiagnosticQuiz as apiSubmitDiagnosticQuiz, getCourseDetails } from '../utils/chatWidget/api';
 
 export interface DiagnosticHandlersProps {
   apiConfig: ApiConfig;
@@ -28,7 +30,7 @@ export interface DiagnosticHandlersProps {
   handleCompleteDiagnosticTestWrapper: (state: DiagnosticState) => Promise<void>;
 }
 
-export const handleStartDiagnosticTest = async (props: DiagnosticHandlersProps) => {
+export const handleStartDiagnosticTest = async (props: DiagnosticHandlersProps, courseKey?: string) => {
   const {
     apiConfig,
     sessionIds,
@@ -54,8 +56,8 @@ export const handleStartDiagnosticTest = async (props: DiagnosticHandlersProps) 
     );
     addMessage(introMessage);
     
-    // Fetch diagnostic quiz from backend
-    const { test, quizId } = await fetchDiagnosticQuiz(apiConfig);
+    // Fetch diagnostic quiz from backend with topic if provided
+    const { test, quizId } = await fetchDiagnosticQuiz(apiConfig, courseKey);
     setDiagnosticState(setupDiagnosticTest(test, quizId));
     setIsDiagnosticMode(true);
     setShowDiagnosticFeedback(false);
@@ -106,20 +108,63 @@ export const handleDiagnosticQuizAnswer = async (
   setTimeout(() => {
     setShowDiagnosticFeedback(false);
     setDiagnosticFeedback(null);
-    setDiagnosticState((prevState: DiagnosticState) => {
-      if (
-        prevState.test &&
-        prevState.currentQuestionIndex < prevState.test.questions.length - 1
-      ) {
-        return goToNextQuestion(prevState);
+    
+    const isLastQuestion =
+      diagnosticState.test &&
+      diagnosticState.currentQuestionIndex === diagnosticState.test.questions.length - 1;
+
+    if (!isLastQuestion) {
+      const nextState = goToNextQuestion(updatedState);
+      setDiagnosticState(nextState);
       } else {
-        // Call complete outside of setDiagnosticState
-        setTimeout(() => handleCompleteDiagnosticTestWrapper(prevState), 0);
-        return prevState;
-      }
-    });
+      // Mark as inactive and clear current question index to prevent further answers
+      setDiagnosticState({ ...updatedState, isActive: false, currentQuestionIndex: -1 });
+      setTimeout(() => handleCompleteDiagnosticTestWrapper({ ...updatedState, isActive: false, currentQuestionIndex: -1 }), 0);
+    }
   }, 3000);
 };
+
+/**
+ * Helper to create a recommended course message with Yes/No buttons
+ */
+const createRecommendedCourseMessage = (
+  courseId: string,
+  courseTitle: string,
+  onStart: () => void,
+  onDecline: () => void
+): ChatMessage => ({
+  id: `recommended-course-${Date.now()}`,
+  type: 'assistant',
+  content: `🎓 **Recommended Course:** ${courseTitle}
+
+Based on your diagnostic results, I've created a personalized course to help you improve your financial knowledge.
+
+Would you like to start this course now?`,
+  timestamp: new Date().toISOString(),
+  sessionId: '', // Will be set by caller
+  userId: '',    // Will be set by caller
+  metadata: {
+    buttons: [
+      { label: 'Yes, start course', action: onStart },
+      { label: 'No, maybe later', action: onDecline }
+    ]
+  }
+});
+
+/**
+ * Helper to create a course declined message
+ */
+const createCourseDeclinedMessage = (
+  sessionId: string,
+  userId: string
+): ChatMessage => ({
+  id: `course-declined-${Date.now()}`,
+  type: 'assistant',
+  content: `No problem! You can start a course anytime from the course list. Feel free to explore other topics or ask me any questions about personal finance.`,
+  timestamp: new Date().toISOString(),
+  sessionId,
+  userId
+});
 
 export const handleCompleteDiagnosticTest = async (
   state: DiagnosticState,
@@ -130,47 +175,140 @@ export const handleCompleteDiagnosticTest = async (
     sessionIds,
     addMessage,
     setIsLoading,
+    closeCurrentDisplays,
+    setDiagnosticState,
     setIsDiagnosticMode,
-    setDiagnosticState
+    setShowDiagnosticFeedback,
+    setDiagnosticFeedback,
+    removeIntroMessage
   } = props;
 
   try {
-    if (!state.test || !state.quizId) return;
     setIsLoading(true);
-    
-    const result = await submitDiagnosticQuizAnswers(
+    closeCurrentDisplays();
+
+    // Check if quizId exists
+    if (!state.quizId) {
+      throw new Error('Quiz ID is missing. Cannot submit diagnostic test.');
+    }
+
+    // Submit diagnostic quiz using the existing API function
+    const result = await apiSubmitDiagnosticQuiz(
       apiConfig,
       state.quizId,
-      state.test.questions,
+      state.test!.questions,
       state.answers,
       sessionIds.userId
     );
     
-    // Optionally, use result to show score, recommendations, etc.
-    setIsDiagnosticMode(false);
-    setDiagnosticState(resetDiagnosticState());
-    
-    // Create completion message
-    const completionMessage = createSystemMessage(
-      `🎉 **Assessment Complete!**\n\n📊 **Your Score**: ${result.overall_score}%\n\n💡 **What's Next**: I'll show you personalized course recommendations below based on your results!`,
+    if (result) {
+      // Show diagnostic results
+      const correctAnswers = state.answers.filter((answer, index) => 
+        answer === state.test!.questions[index].correctAnswer
+      ).length;
+      
+      const totalQuestions = state.test!.questions.length;
+      const score = Math.round((correctAnswers / totalQuestions) * 100);
+      
+      // Create a simple, clean diagnostic summary
+      const resultsMessage = createSystemMessage(
+        `🎯 **Diagnostic Test Complete!**
+
+📊 **Your Score:** ${correctAnswers}/${totalQuestions} (${score}%)
+
+Based on your performance, I have a personalized course recommendation for you. Would you like to continue?`,
       sessionIds.sessionId,
       sessionIds.userId
     );
-    addMessage(completionMessage);
-    
-    // Set recommended courses if available
-    if (result.topic_breakdown) {
-      // You can use topic_breakdown to recommend courses
+      
+      addMessage(resultsMessage);
+      
+      // Check if a course was recommended - look at top level of result
+      const recommendedCourseId = result.recommended_course_id;
+      
+      if (recommendedCourseId) {
+        // Get course details to display title
+        try {
+          const courseDetails = await getCourseDetails(apiConfig, recommendedCourseId);
+          if (courseDetails.success) {
+            const courseTitle = courseDetails.data.title;
+            
+            // Create course recommendation message with buttons
+            const courseMessage = createRecommendedCourseMessage(
+              recommendedCourseId,
+              courseTitle,
+              () => {
+                // Add a small delay to ensure course is fully registered
+                setTimeout(() => {
+                  // Dispatch custom event to start course
+                  window.dispatchEvent(new CustomEvent('start-recommended-course', {
+                    detail: { id: recommendedCourseId, title: courseTitle }
+                  }));
+                }, 500); // 500ms delay
+              },
+              () => {
+                // Add declined message
+                const declinedMessage = createCourseDeclinedMessage(sessionIds.sessionId, sessionIds.userId);
+                addMessage(declinedMessage);
+              }
+            );
+            
+            courseMessage.sessionId = sessionIds.sessionId;
+            courseMessage.userId = sessionIds.userId;
+            addMessage(courseMessage);
+          }
+        } catch (error) {
+          console.error('Failed to get course details:', error);
+          // Still show recommendation with just the ID
+          const courseMessage = createRecommendedCourseMessage(
+            recommendedCourseId,
+            'Recommended Course',
+            () => {
+              // Add a small delay to ensure course is fully registered
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('start-recommended-course', {
+                  detail: { id: recommendedCourseId, title: 'Recommended Course' }
+                }));
+              }, 500); // 500ms delay
+            },
+            () => {
+              const declinedMessage = createCourseDeclinedMessage(sessionIds.sessionId, sessionIds.userId);
+              addMessage(declinedMessage);
+            }
+          );
+          
+          courseMessage.sessionId = sessionIds.sessionId;
+          courseMessage.userId = sessionIds.userId;
+          addMessage(courseMessage);
+        }
+      } else {
+        // No course was recommended - show a simple failed message
+        const failedMessage = createSystemMessage(
+          `📚 **Course Recommendation Failed**
+
+Sorry, I couldn't generate a personalized course recommendation at this time. You can type \`/courses\` to see all available courses, or ask me any financial question!`,
+          sessionIds.sessionId,
+          sessionIds.userId
+        );
+        addMessage(failedMessage);
+      }
+    } else {
+      throw new Error('Failed to submit diagnostic quiz');
     }
+    
   } catch (error) {
-    console.error('Failed to complete diagnostic test:', error);
+    console.error('Diagnostic completion error:', error);
     const errorMessage = createSystemMessage(
-      'Failed to complete diagnostic test. Please try again later.',
+      'Sorry, there was an error processing your diagnostic test. Please try again.',
       sessionIds.sessionId,
       sessionIds.userId
     );
     addMessage(errorMessage);
   } finally {
     setIsLoading(false);
+    setDiagnosticState(resetDiagnosticState());
+    setIsDiagnosticMode(false);
+    setShowDiagnosticFeedback(false);
+    setDiagnosticFeedback(null);
   }
 }; 

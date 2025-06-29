@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
 import '../../styles/ChatWidget.css';
 import { CourseQuizState, CourseQuizAnswers } from '../../utils/chatWidget';
@@ -8,7 +8,7 @@ interface CourseQuizProps {
   courseQuizAnswers: CourseQuizAnswers;
   onCourseQuizAnswerSelection: (questionIndex: number, selectedOption: number) => void;
   onCourseQuizNavigation: (direction: 'next' | 'previous' | number) => void;
-  onSubmitCourseQuiz: () => void;
+  onSubmitCourseQuiz: (selectedOption: number, correct: boolean) => void;
   areAllQuestionsAnswered: (answers: number[]) => boolean;
 }
 
@@ -20,8 +20,101 @@ export const CourseQuiz: React.FC<CourseQuizProps> = ({
   onSubmitCourseQuiz,
   areAllQuestionsAnswered
 }) => {
-  if (!courseQuiz) {
-    return null;
+  const [showSummary, setShowSummary] = useState(false);
+  const [quizResult, setQuizResult] = useState<{ correct: boolean; explanation: string } | null>(null);
+
+  if (!courseQuiz || !Array.isArray(courseQuiz.questions) || courseQuiz.questions.length === 0) {
+    return <div className="course-quiz-container"><div className="course-quiz-header"><h3>Course Quiz</h3></div><div>No quiz questions available.</div></div>;
+  }
+
+  const currentQuestion = courseQuiz.questions[0]; // For single question quizzes
+  if (!currentQuestion || !Array.isArray(currentQuestion.options)) {
+    return <div className="course-quiz-container"><div className="course-quiz-header"><h3>Course Quiz</h3></div><div>Invalid quiz question format.</div></div>;
+  }
+
+  const selectedAnswer = courseQuizAnswers.answers[0];
+  const hasAnswered = selectedAnswer !== -1;
+
+  const handleAnswerSelection = (optionIndex: number) => {
+    onCourseQuizAnswerSelection(0, optionIndex);
+  };
+
+  const handleNext = () => {
+    if (!showSummary && hasAnswered) {
+      // First click: submit answer and show summary
+      const correct = selectedAnswer === currentQuestion.correctAnswer;
+      setQuizResult({ correct, explanation: currentQuestion.explanation || 'Good job!' });
+      setShowSummary(true);
+    } else if (showSummary) {
+      // Second click: proceed to next page
+      const correct = selectedAnswer === currentQuestion.correctAnswer;
+      onSubmitCourseQuiz(selectedAnswer, correct);
+    }
+  };
+
+  if (showSummary && quizResult) {
+    return (
+      <div className="course-quiz-container">
+        <div className="course-quiz-header">
+          <div className="quiz-title">
+            <span className="quiz-icon">🎯</span>
+            <h3>Quiz Summary</h3>
+          </div>
+          <div className="quiz-progress">
+            Quiz Page {courseQuiz.pageIndex + 1} of {courseQuiz.totalPages}
+          </div>
+        </div>
+        
+        <div className="quiz-summary">
+          <div className={`quiz-result ${quizResult.correct ? 'correct' : 'incorrect'}`}>
+            <div className="result-icon">
+              {quizResult.correct ? '🎉' : '🤔'}
+            </div>
+            <div className="result-text">
+              <h4>{quizResult.correct ? 'Correct!' : 'Not quite right'}</h4>
+              <p>{quizResult.explanation}</p>
+            </div>
+          </div>
+          
+          <div className="question-review">
+            <h5>Question:</h5>
+            <p>{currentQuestion.question}</p>
+            
+            <div className="answer-review">
+              <div className="your-answer">
+                <strong>Your answer:</strong> {String.fromCharCode(65 + selectedAnswer)} - {currentQuestion.options[selectedAnswer]}
+              </div>
+              {!quizResult.correct && (
+                <div className="correct-answer">
+                  <strong>Correct answer:</strong> {String.fromCharCode(65 + currentQuestion.correctAnswer)} - {currentQuestion.options[currentQuestion.correctAnswer]}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        <div className="course-quiz-navigation">
+          <button
+            onClick={() => onCourseQuizNavigation('previous')}
+            className="quiz-nav-btn quiz-nav-prev"
+            disabled={courseQuiz.pageIndex === 0}
+          >
+            <ChevronLeft size={14} />
+            Back
+          </button>
+          
+          <div className="quiz-nav-buttons">
+            <button
+              onClick={handleNext}
+              className="quiz-nav-btn submit-quiz-btn"
+            >
+              <ChevronRight size={14} />
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -32,85 +125,56 @@ export const CourseQuiz: React.FC<CourseQuizProps> = ({
           <h3>Course Quiz</h3>
         </div>
         <div className="quiz-progress">
-          Question {courseQuizAnswers.currentQuestionIndex + 1} of {courseQuiz.questions.length}
+          Quiz Page {courseQuiz.pageIndex + 1} of {courseQuiz.totalPages}
         </div>
       </div>
       
       <div className="single-quiz-question">
-        {(() => {
-          const question = courseQuiz.questions[courseQuizAnswers.currentQuestionIndex];
-          return (
-            <div className="course-quiz-question">
-              <div className="question-header">
-                <span className="question-number">Question {courseQuizAnswers.currentQuestionIndex + 1}</span>
-                <span className="question-difficulty">{question.difficulty}</span>
-              </div>
-              
-              <p className="question-text">{question.question}</p>
-              
-              <div className="question-options">
-                {question.options.map((option, optionIndex) => (
-                  <button
-                    key={optionIndex}
-                    onClick={() => onCourseQuizAnswerSelection(courseQuizAnswers.currentQuestionIndex, optionIndex)}
-                    className={`quiz-option ${
-                      courseQuizAnswers.answers[courseQuizAnswers.currentQuestionIndex] === optionIndex ? 'selected' : ''
-                    }`}
-                  >
-                    <div className="option-indicator">
-                      {String.fromCharCode(65 + optionIndex)}
-                    </div>
-                    <span className="option-text">{option}</span>
-                    {courseQuizAnswers.answers[courseQuizAnswers.currentQuestionIndex] === optionIndex && (
-                      <CheckCircle size={16} className="option-check" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
+        <div className="course-quiz-question">
+          <div className="question-header">
+            <span className="question-number">Question 1</span>
+            <span className="question-difficulty">{currentQuestion.difficulty || 'medium'}</span>
+          </div>
+          <p className="question-text">{currentQuestion.question}</p>
+          <div className="question-options">
+            {currentQuestion.options.map((option, optionIndex) => (
+              <button
+                key={optionIndex}
+                onClick={() => handleAnswerSelection(optionIndex)}
+                className={`quiz-option ${selectedAnswer === optionIndex ? 'selected' : ''}`}
+              >
+                <div className="option-indicator">
+                  {String.fromCharCode(65 + optionIndex)}
+                </div>
+                <span className="option-text">{option}</span>
+                {selectedAnswer === optionIndex && (
+                  <CheckCircle size={16} className="option-check" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       
       <div className="course-quiz-navigation">
         <button
           onClick={() => onCourseQuizNavigation('previous')}
-          disabled={courseQuizAnswers.currentQuestionIndex === 0}
           className="quiz-nav-btn quiz-nav-prev"
+          disabled={courseQuiz.pageIndex === 0}
         >
           <ChevronLeft size={14} />
-          Previous
+          Back
         </button>
         
-        <div className="quiz-progress-dots">
-          {courseQuiz.questions.map((_, index) => (
-            <div
-              key={index}
-              className={`quiz-dot ${index === courseQuizAnswers.currentQuestionIndex ? 'active' : ''} ${
-                courseQuizAnswers.answers[index] !== -1 ? 'answered' : ''
-              }`}
-              onClick={() => onCourseQuizNavigation(index)}
-            />
-          ))}
-        </div>
-        
-        {courseQuizAnswers.currentQuestionIndex < courseQuiz.questions.length - 1 ? (
+        <div className="quiz-nav-buttons">
           <button
-            onClick={() => onCourseQuizNavigation('next')}
-            className="quiz-nav-btn quiz-nav-next"
-          >
-            Next
-            <ChevronRight size={14} />
-          </button>
-        ) : (
-          <button
-            onClick={onSubmitCourseQuiz}
-            disabled={!areAllQuestionsAnswered(courseQuizAnswers.answers)}
+            onClick={handleNext}
+            disabled={!hasAnswered}
             className="quiz-nav-btn submit-quiz-btn"
           >
-            Submit Quiz
+            Next
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

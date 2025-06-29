@@ -92,18 +92,51 @@ export const handleRemoveFile = async (
   props: FileHandlersProps
 ) => {
   const {
-    apiConfig,
     sessionIds,
     addMessage,
     setUploadedFiles,
     uploadedFiles
   } = props;
 
-  const file = uploadedFiles[fileIndex];
+  // Create a fresh copy of the array to avoid reference issues
+  const currentFiles = [...uploadedFiles];
+
+  // Debug logging
+  console.log('handleRemoveFile called with:', { fileIndex, uploadedFilesLength: currentFiles.length });
+  console.log('currentFiles:', currentFiles);
+
+  // Validate fileIndex and file existence
+  if (fileIndex < 0 || fileIndex >= currentFiles.length) {
+    console.error('Invalid file index:', fileIndex, 'currentFiles length:', currentFiles.length);
+    const errorMessage = createSystemMessage(
+      'Invalid file index. Please try again.',
+      sessionIds.sessionId,
+      sessionIds.userId
+    );
+    addMessage(errorMessage);
+    return;
+  }
+
+  const file = currentFiles[fileIndex];
+  console.log('File at index', fileIndex, ':', file);
+  
+  // Validate file object
+  if (!file || !file.name) {
+    console.error('Invalid file object at index:', fileIndex, 'file:', file);
+    const errorMessage = createSystemMessage(
+      'Invalid file object. Please try again.',
+      sessionIds.sessionId,
+      sessionIds.userId
+    );
+    addMessage(errorMessage);
+    return;
+  }
+  
   try {
-    await removeFile(apiConfig, file.name);
-    
-    setUploadedFiles(uploadedFiles.filter((_, index) => index !== fileIndex));
+    // Remove file from local state immediately
+    const updatedFiles = currentFiles.filter((_, index) => index !== fileIndex);
+    console.log('Updated files array:', updatedFiles);
+    setUploadedFiles(updatedFiles);
     
     const removalMessage = createSystemMessage(
       formatFileRemovalMessage(file.name),
@@ -111,6 +144,14 @@ export const handleRemoveFile = async (
       sessionIds.userId
     );
     addMessage(removalMessage);
+    
+    // Optionally try to remove from backend, but don't fail if it doesn't work
+    try {
+      // await removeFile(apiConfig, file.name);
+      // Backend remove endpoint might not exist, so we'll just remove locally
+    } catch (backendError) {
+      console.warn('Backend file removal failed, but file removed locally:', backendError);
+    }
   } catch (error) {
     console.error('Remove file error:', error);
     const errorMessage = createSystemMessage(

@@ -1,3 +1,14 @@
+// Export existing handlers
+export * from './messageHandlers';
+export * from './diagnosticHandlers';
+export * from './courseHandlers';
+export * from './quizHandlers';
+export * from './fileHandlers';
+
+// Export new handlers
+export * from './sidebarHandlers';
+export * from './profileHandlers';
+
 // Message handlers
 export { handleSendMessage } from './messageHandlers';
 export type { MessageHandlersProps } from './messageHandlers';

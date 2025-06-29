@@ -10,6 +10,8 @@ export interface CourseQuizState {
   currentQuestion: number;
   score: number;
   attempts: number;
+  pageIndex: number; // Track which page this quiz belongs to
+  totalPages: number; // Track total pages in the course
 }
 
 export interface CourseQuizAnswers {
@@ -20,11 +22,13 @@ export interface CourseQuizAnswers {
 /**
  * Initialize course quiz state
  */
-export const initializeCourseQuiz = (course: Course): CourseQuizState => ({
+export const initializeCourseQuiz = (course: Course, pageIndex: number = 0): CourseQuizState => ({
   questions: course.quizQuestions,
   currentQuestion: 0,
   score: 0,
-  attempts: 1
+  attempts: 1,
+  pageIndex: pageIndex,
+  totalPages: course.quizQuestions.length
 });
 
 /**

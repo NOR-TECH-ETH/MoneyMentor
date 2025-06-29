@@ -26,12 +26,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   inputValue,
   isLoading,
   uploadProgress,
+  showCommandSuggestions,
+  commandSuggestions,
+  showCommandMenu,
   availableCommands,
   activeMode,
   onInputChange,
   onSendMessage,
   onFileUpload,
   onCommandSelect,
+  onToggleCommandMenu,
+  onCloseCommandMenu,
   disabled = false
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);

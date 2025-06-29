@@ -9,6 +9,15 @@ interface WindowsProps {
   learnChildren: React.ReactNode;
   isExpanded?: boolean;
   hasUploads?: boolean;
+  // Quiz tracker props
+  showQuizDropdown?: boolean;
+  onToggleQuizDropdown?: () => void;
+  onCloseQuizDropdown?: () => void;
+  quizTrackerRef?: React.RefObject<HTMLButtonElement>;
+  chatQuizCorrectAnswered?: number;
+  chatQuizTotalAnswered?: number;
+  chatQuizHistory?: any[];
+  QuizHistoryDropdown?: React.ComponentType<any>;
 }
 
 export const Windows: React.FC<WindowsProps> = ({
@@ -19,167 +28,71 @@ export const Windows: React.FC<WindowsProps> = ({
   chatChildren,
   learnChildren,
   isExpanded = false,
-  hasUploads = false
+  hasUploads = false,
+  // Quiz tracker props
+  showQuizDropdown = false,
+  onToggleQuizDropdown,
+  onCloseQuizDropdown,
+  quizTrackerRef,
+  chatQuizCorrectAnswered = 0,
+  chatQuizTotalAnswered = 0,
+  chatQuizHistory = [],
+  QuizHistoryDropdown
 }) => {
-  const [navButtonPosition, setNavButtonPosition] = useState({ x: 410, y: 80 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const navRef = useRef<HTMLDivElement>(null);
-
-  // Function to ensure position is within bounds
-  const ensureValidPosition = (position: { x: number; y: number }) => {
-    if (!navRef.current) return position;
-    
-    const container = navRef.current.parentElement;
-    if (!container) return position;
-    
-    const containerRect = container.getBoundingClientRect();
-    const navWidth = navRef.current.offsetWidth;
-    const navHeight = navRef.current.offsetHeight;
-    
-    const padding = 10;
-    const maxX = containerRect.width - navWidth - padding;
-    const maxY = containerRect.height - navHeight - padding;
-    const minY = 60;
-    const maxYWithInput = containerRect.height - navHeight - 80;
-    
-    return {
-      x: Math.max(padding, Math.min(position.x, maxX)),
-      y: Math.max(minY, Math.min(position.y, maxYWithInput))
-    };
-  };
-
-  // Update position based on window state
-  useEffect(() => {
-    if (isExpanded) {
-      // When expanded, position on the right side but within bounds
-      const newPosition = ensureValidPosition({ x: 580, y: 80 });
-      setNavButtonPosition(newPosition);
-    } else {
-      // When not expanded, position on the right side
-      const newPosition = ensureValidPosition({ x: 380, y: 80 });
-      setNavButtonPosition(newPosition);
-    }
-  }, [isExpanded]);
-
-  // Update position when uploads are present
-  useEffect(() => {
-    if (hasUploads) {
-      setNavButtonPosition(prev => ensureValidPosition({ ...prev, y: 140 }));
-    } else {
-      setNavButtonPosition(prev => ensureValidPosition({ ...prev, y: 80 }));
-    }
-  }, [hasUploads]);
-
-  // Handle window resize to ensure position stays valid
-  useEffect(() => {
-    const handleResize = () => {
-      setNavButtonPosition(prev => ensureValidPosition(prev));
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Don't start dragging if clicking on a button
-    if ((e.target as HTMLElement).closest('.nav-button')) {
-      return;
-    }
-    
-    if (!navRef.current) return;
-    
-    const rect = navRef.current.getBoundingClientRect();
-    setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    });
-    setIsDragging(true);
-  };
-
-  const handleButtonClick = (e: React.MouseEvent, callback: () => void) => {
-    // Prevent the click from triggering drag
-    e.stopPropagation();
-    callback();
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isDragging || !navRef.current) return;
-
-    const container = navRef.current.parentElement;
-    if (!container) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const navWidth = navRef.current.offsetWidth;
-    const navHeight = navRef.current.offsetHeight;
-    
-    // Calculate new position
-    const newX = e.clientX - containerRect.left - dragOffset.x;
-    const newY = e.clientY - containerRect.top - dragOffset.y;
-
-    // Constrain to container bounds with padding
-    const padding = 10; // Keep some padding from edges
-    const maxX = containerRect.width - navWidth - padding;
-    const maxY = containerRect.height - navHeight - padding;
-    
-    // Ensure minimum Y position (below header) and maximum Y position (above input)
-    const minY = 60; // Below header
-    const maxYWithInput = containerRect.height - navHeight - 80; // Above input area
-
-    const constrainedX = Math.max(padding, Math.min(newX, maxX));
-    const constrainedY = Math.max(minY, Math.min(newY, maxYWithInput));
-
-    setNavButtonPosition({ x: constrainedX, y: constrainedY });
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [isDragging, dragOffset]);
-
   return (
     <>
-      {/* Navigation Buttons - below header */}
-      {currentWindow !== 'intro' && (
+      {/* Quiz Tracker Button - Only visible in chat mode */}
+      {currentWindow === 'chat' && onToggleQuizDropdown && quizTrackerRef && QuizHistoryDropdown && (
         <div 
-          ref={navRef}
-          className={`window-navigation ${isDragging ? 'dragging' : ''}`}
+          className="quiz-tracker-button"
           style={{
-            left: navButtonPosition.x,
-            top: navButtonPosition.y,
-            cursor: isDragging ? 'grabbing' : 'grab'
+            position: 'absolute',
+            top: '70px',
+            right: '20px',
+            zIndex: 1000
           }}
-          onMouseDown={handleMouseDown}
         >
-          {currentWindow === 'chat' && (
-            <button 
-              className="nav-button learn-nav"
-              onClick={(e) => handleButtonClick(e, onNavigateToLearn)}
-              title="Change to Learning Mode"
-            >
-              📚
-            </button>
-          )}
-          {currentWindow === 'learn' && (
-            <button 
-              className="nav-button chat-nav"
-              onClick={(e) => handleButtonClick(e, onNavigateToChat)}
-              title="Change to Chat Mode"
-            >
-              💬
-            </button>
-          )}
+          <button
+            ref={quizTrackerRef}
+            className="quiz-progress-simple-btn"
+            onClick={onToggleQuizDropdown}
+            title="View quiz history"
+            style={{ 
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+              transition: 'all 0.2s ease',
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: '600',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
+            }}
+          >
+            <span className="quiz-progress-simple-text" style={{ lineHeight: '1' }}>
+              {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
+            </span>
+          </button>
+          <QuizHistoryDropdown
+            open={showQuizDropdown}
+            onClose={onCloseQuizDropdown}
+            anchorRef={quizTrackerRef}
+            quizHistory={chatQuizHistory}
+          />
         </div>
       )}
 
@@ -193,26 +106,30 @@ export const Windows: React.FC<WindowsProps> = ({
             <div className="intro-buttons">
               <button 
                 className="intro-button chat-button"
-                onClick={(e) => handleButtonClick(e, onNavigateToChat)}
+                onClick={onNavigateToChat}
               >
                 <div className="intro-icon">💬</div>
                 <div className="intro-text">
-                  <h3>Chat</h3>
-                  <p>Ask questions, take quizzes, and explore courses with AI assistance</p>
+                  <h3>Chat Mode</h3>
+                  <p>Interactive conversations with AI assistance.</p>
                 </div>
               </button>
               
               <button 
                 className="intro-button learn-button"
-                onClick={(e) => handleButtonClick(e, onNavigateToLearn)}
+                onClick={onNavigateToLearn}
               >
                 <div className="intro-icon">📚</div>
                 <div className="intro-text">
-                  <h3>Learn</h3>
-                  <p>Structured learning paths and educational content</p>
+                  <h3>Learning Center</h3>
+                  <p>Structured courses and educational content.</p>
                 </div>
               </button>
             </div>
+            
+            <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '12px', color: '#666', opacity: 0.7 }}>
+              💡 <strong>Tip:</strong> You can switch between modes anytime using the navigation buttons. Maximize the window if you can't see the button for switching windows.
+             </div>
           </div>
         </div>
       )}
