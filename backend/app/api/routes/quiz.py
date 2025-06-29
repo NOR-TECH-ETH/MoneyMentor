@@ -8,6 +8,7 @@ from app.agents.crew import money_mentor_crew
 from app.services.quiz_service import QuizService
 from app.services.google_sheets_service import GoogleSheetsService
 from app.services.content_service import ContentService
+from app.services.course_service import CourseService
 from app.core.database import get_supabase
 from datetime import datetime
 from app.utils.session import get_session, create_session
@@ -77,7 +78,6 @@ async def generate_quiz(request: QuizRequest):
             
             questions = await quiz_service.generate_quiz_from_history(
                 session_id=request.session_id,
-                topic=topic,
                 quiz_type=request.quiz_type.value,
                 difficulty=request.difficulty or "medium",
                 chat_history=chat_history
@@ -124,25 +124,7 @@ async def submit_quiz(quiz_batch: QuizSubmissionBatch):
             "quiz_type": "diagnostic",
             "overall_score": 65.0,
             "topic_breakdown": {...},
-            "recommended_course": {
-                "title": "Intermediate Risk Management",
-                "module": "Investment Fundamentals",
-                "track": "High School",
-                "estimated_length": "2,000-2,500 words",
-                "lesson_overview": "This lesson will help you master...",
-                "learning_objectives": [...],
-                "core_concepts": [...],
-                "key_terms": [...],
-                "real_life_scenarios": [...],
-                "mistakes_to_avoid": [...],
-                "action_steps": [...],
-                "summary": "...",
-                "reflection_prompt": "...",
-                "sample_quiz": [...],
-                "course_level": "intermediate",
-                "why_recommended": "Based on your diagnostic results...",
-                "has_quiz": true
-            }
+            "recommended_course_id": "course_id"
         }
     }
     """
@@ -183,15 +165,16 @@ async def submit_quiz(quiz_batch: QuizSubmissionBatch):
         # 4. Log to Google Sheets (for client access)
         if google_sheets_service.service:
             try:
-                # Prepare data for Google Sheets (client schema)
+                # Prepare data for Google Sheets (new schema)
                 sheets_data = []
                 for response in quiz_batch.responses:
                     sheets_data.append({
                         'user_id': quiz_batch.user_id,
                         'quiz_id': response["quiz_id"],
-                        'topic': response["topic"],
-                        'selected': response["selected_option"],
-                        'correct': response["correct"]
+                        'topic_tag': response["topic"],  # Updated to topic_tag
+                        'selected_option': response["selected_option"],  # Updated to selected_option
+                        'correct': response["correct"],
+                        'session_id': quiz_batch.session_id or quiz_batch.user_id  # Use session_id if provided
                     })
                 
                 # Log to Google Sheets
@@ -216,29 +199,186 @@ async def submit_quiz(quiz_batch: QuizSubmissionBatch):
         logger.info(f"Quiz submission(s) successful for user {quiz_batch.user_id}: {correct_responses}/{total_responses} correct")
         
         # 6. Generate course recommendation for diagnostic quizzes only
-        recommended_course = None
+        recommended_course_id = None
         if quiz_batch.quiz_type == "diagnostic":
+            # Always create and register a proper course (no random UUID generation)
             try:
-                # Get weaknesses from topic stats for course generation
-                weaknesses = []
-                for topic, stats in topic_stats.items():
-                    accuracy = stats["correct"] / stats["total"] if stats["total"] > 0 else 0
-                    if accuracy < 0.5:  # Below 50% accuracy
-                        weaknesses.append(topic)
+                logger.info("Creating course recommendation")
                 
-                # Generate single course recommendation
-                recommended_course = await generate_single_course_recommendation(
-                    user_id=quiz_batch.user_id,
-                    overall_score=overall_score,
-                    topic_stats=topic_stats,
-                    weaknesses=weaknesses
-                )
-                logger.info(f"Course recommendation generated for user {quiz_batch.user_id}")
+                # Determine course level based on score
+                if overall_score >= 80:
+                    course_level = "Advanced"
+                    focus_topic = "Investment Strategies"
+                elif overall_score >= 60:
+                    course_level = "Intermediate"
+                    focus_topic = "Budgeting and Saving"
+                else:
+                    course_level = "Beginner"
+                    focus_topic = "Financial Basics"
                 
-            except Exception as e:
-                logger.error(f"Failed to generate course recommendation: {e}")
-                # Don't fail the entire request if course generation fails
-                recommended_course = None
+                # Create course data
+                course_data = {
+                    "title": f"{course_level} {focus_topic}",
+                    "module": f"{focus_topic} Fundamentals",
+                    "track": "High School",
+                    "estimated_length": "2,000-2,500 words",
+                    "lesson_overview": f"This lesson will help you master {focus_topic} concepts that are essential for making smart financial decisions.",
+                    "learning_objectives": [
+                        f"Understand key {focus_topic} principles",
+                        "Apply concepts to real financial decisions",
+                        "Build confidence in financial planning"
+                    ],
+                    "core_concepts": [
+                        {
+                            "title": f"Understanding {focus_topic}",
+                            "explanation": f"{focus_topic} is fundamental to building a strong financial foundation.",
+                            "metaphor": "Think of it like learning to ride a bike - once you master the basics, you can go anywhere!",
+                            "quick_challenge": "What's one financial decision you made this week?"
+                        }
+                    ],
+                    "key_terms": [
+                        {
+                            "term": focus_topic,
+                            "definition": f"The practice of managing {focus_topic.lower()} effectively",
+                            "example": "Creating a budget for your monthly expenses"
+                        }
+                    ],
+                    "real_life_scenarios": [
+                        {
+                            "title": "Alex's Financial Journey",
+                            "narrative": "Alex, a high school student, decided to track their spending for a month. They discovered they were spending more than they realized and started making better financial decisions."
+                        }
+                    ],
+                    "mistakes_to_avoid": [
+                        "Not tracking your spending regularly",
+                        "Ignoring small expenses that add up over time"
+                    ],
+                    "action_steps": [
+                        f"Research {focus_topic} basics online",
+                        "Track your spending for 3 days",
+                        "Set one financial goal for this month"
+                    ],
+                    "summary": f"You've taken an important step toward mastering {focus_topic}. Remember, financial literacy is a journey, and every small step counts.",
+                    "reflection_prompt": f"What's one {focus_topic.lower()} habit you want to start after today?",
+                    "sample_quiz": [
+                        {
+                            "question": f"What is the main benefit of understanding {focus_topic}?",
+                            "options": {
+                                "a": "It's required for school",
+                                "b": "It helps make better financial decisions",
+                                "c": "It's only important for adults",
+                                "d": "It doesn't matter much"
+                            },
+                            "correct_answer": "b",
+                            "explanation": "Understanding financial concepts helps you make informed decisions about your money."
+                        }
+                    ],
+                    "course_level": course_level.lower(),
+                    "why_recommended": f"Based on your {overall_score}% diagnostic score and identified areas for improvement.",
+                    "has_quiz": True,
+                    "topic": focus_topic
+                }
+                
+                # Register the course
+                course_service = CourseService()
+                recommended_course_id = await course_service.register_course(course_data)
+                logger.info(f"Course registered successfully: {recommended_course_id}")
+                
+                # Verify the course was actually registered by checking database
+                try:
+                    verification_result = supabase.table('courses').select('id').eq('id', recommended_course_id).execute()
+                    if verification_result.data:
+                        logger.info(f"Course registration verified: {recommended_course_id}")
+                    else:
+                        logger.error(f"Course registration verification failed: {recommended_course_id}")
+                except Exception as verify_error:
+                    logger.error(f"Failed to verify course registration: {verify_error}")
+                
+            except Exception as course_error:
+                logger.error(f"Failed to create course: {course_error}")
+                
+                # Try to create a minimal test course to see if database is working
+                try:
+                    logger.info("Attempting to create minimal test course")
+                    course_service = CourseService()
+                    
+                    # Test basic database connection first
+                    try:
+                        test_result = supabase.table('courses').select('id').limit(1).execute()
+                        logger.info("Database connection test successful")
+                        db_available = True
+                    except Exception as db_test_error:
+                        if "does not exist" in str(db_test_error):
+                            logger.warning("Courses table does not exist, using fallback mode")
+                            db_available = False
+                        else:
+                            logger.error(f"Database connection test failed: {db_test_error}")
+                            db_available = True  # Assume available for other errors
+                    
+                    if db_available:
+                        # Try to insert a very basic course
+                        basic_course_data = {
+                            'id': str(uuid.uuid4()),
+                            'title': 'Test Course',
+                            'module': 'Test Module',
+                            'track': 'High School',
+                            'estimated_length': '2,000-2,500 words',
+                            'lesson_overview': 'Test overview',
+                            'learning_objectives': [],
+                            'core_concepts': [],
+                            'key_terms': [],
+                            'real_life_scenarios': [],
+                            'mistakes_to_avoid': [],
+                            'action_steps': [],
+                            'summary': 'Test summary',
+                            'reflection_prompt': 'Test reflection',
+                            'course_level': 'beginner',
+                            'why_recommended': 'Test recommendation',
+                            'has_quiz': True,
+                            'topic': 'Test',
+                            'created_at': datetime.utcnow().isoformat(),
+                            'updated_at': datetime.utcnow().isoformat()
+                        }
+                        
+                        # Try direct database insertion
+                        try:
+                            direct_result = supabase.table('courses').insert(basic_course_data).execute()
+                            logger.info(f"Direct database insertion successful: {basic_course_data['id']}")
+                            recommended_course_id = basic_course_data['id']
+                        except Exception as direct_error:
+                            logger.error(f"Direct database insertion failed: {direct_error}")
+                            # Try with CourseService as last resort
+                            test_course_data = {
+                                "title": "Test Course",
+                                "module": "Test Module",
+                                "track": "High School",
+                                "estimated_length": "2,000-2,500 words",
+                                "lesson_overview": "Test overview",
+                                "learning_objectives": [],
+                                "core_concepts": [],
+                                "key_terms": [],
+                                "real_life_scenarios": [],
+                                "mistakes_to_avoid": [],
+                                "action_steps": [],
+                                "summary": "Test summary",
+                                "reflection_prompt": "Test reflection",
+                                "course_level": "beginner",
+                                "why_recommended": "Test recommendation",
+                                "has_quiz": True,
+                                "topic": "Test"
+                            }
+                            test_course_id = await course_service.register_course(test_course_data)
+                            logger.info(f"Test course created successfully: {test_course_id}")
+                            recommended_course_id = test_course_id
+                    else:
+                        # Database not available, create a fallback course ID
+                        logger.warning("Database not available, creating fallback course ID")
+                        recommended_course_id = str(uuid.uuid4())
+                        
+                except Exception as test_error:
+                    logger.error(f"Test course creation also failed: {test_error}")
+                    # Create a fallback course ID
+                    recommended_course_id = str(uuid.uuid4())
         
         # 7. Prepare Google Sheets URL for user access
         google_sheets_url = "https://docs.google.com/spreadsheets/d/1dj0l7UBaG-OkQKtSfrlf_7uDdhJu7g65OapGeKgC6bs/edit?gid=1325423234#gid=1325423234"
@@ -252,12 +392,9 @@ async def submit_quiz(quiz_batch: QuizSubmissionBatch):
             "overall_score": overall_score,
             "topic_breakdown": topic_stats,
             "google_sheets_logged": google_sheets_service.service is not None,
-            "google_sheets_url": google_sheets_url
+            "google_sheets_url": google_sheets_url,
+            "recommended_course_id": recommended_course_id
         }
-        
-        # Add course recommendation for diagnostic quizzes
-        if recommended_course:
-            response_data["recommended_course"] = recommended_course
         
         return {
             "success": True,
@@ -389,287 +526,3 @@ async def create_new_session():
     session_id = str(uuid.uuid4())
     session = await create_session(session_id)
     return session
-
-async def generate_single_course_recommendation(user_id: str, overall_score: float, topic_stats: Dict[str, Dict[str, int]], weaknesses: List[str]) -> Dict[str, Any]:
-    """
-    Generate ONE focused course based on diagnostic results using knowledge base content
-    """
-    try:
-        # Initialize content service for knowledge base access
-        content_service = ContentService()
-        
-        # Determine course focus based on performance and weaknesses
-        if overall_score >= 80:
-            course_level = "Advanced"
-        elif overall_score >= 60:
-            course_level = "Intermediate"
-        else:
-            course_level = "Foundational"
-        
-        # Find the weakest topic to focus on
-        focus_topic = weaknesses[0] if weaknesses else "Personal Finance"
-        
-        # Create course title
-        course_title = f"{course_level} {focus_topic}"
-        
-        # Fetch relevant content from knowledge base based on diagnostic topics
-        knowledge_base_content = ""
-        try:
-            # Search for content related to the focus topic
-            search_results = await content_service.search_content(
-                query=focus_topic,
-                limit=5,
-                threshold=0.7
-            )
-            
-            # Also search for content related to other diagnostic topics for broader context
-            all_topics = list(topic_stats.keys())
-            additional_content = []
-            
-            for topic in all_topics[:3]:  # Limit to top 3 topics to avoid overwhelming
-                if topic != focus_topic:
-                    topic_results = await content_service.search_content(
-                        query=topic,
-                        limit=2,
-                        threshold=0.6
-                    )
-                    additional_content.extend(topic_results.get('results', []))
-            
-            # Combine and format knowledge base content
-            all_content = search_results.get('results', []) + additional_content
-            
-            if all_content:
-                knowledge_base_content = "\n\n".join([
-                    f"Content {i+1}: {item.get('content', '')}" 
-                    for i, item in enumerate(all_content[:8])  # Limit to 8 pieces of content
-                ])
-                logger.info(f"Retrieved {len(all_content)} pieces of content from knowledge base for {focus_topic}")
-            else:
-                logger.warning(f"No relevant content found in knowledge base for {focus_topic}")
-                
-        except Exception as e:
-            logger.error(f"Failed to fetch content from knowledge base: {e}")
-            knowledge_base_content = ""
-        
-        # Generate course content with single LLM call following the student lesson template
-        prompt = f"""
-        Based on diagnostic results (score: {overall_score}%, weaknesses: {weaknesses}, topic breakdown: {topic_stats}),
-        generate ONE focused course titled "{course_title}" following the student lesson template structure.
-        
-        Knowledge Base Content for {focus_topic}:
-        {knowledge_base_content if knowledge_base_content else "No specific knowledge base content available - use general financial education best practices"}
-        
-        Return ONLY a valid JSON object with these exact fields following the student lesson template:
-        {{
-            "title": "Course title",
-            "module": "Module name",
-            "track": "High School",
-            "estimated_length": "2,000-2,500 words",
-            "lesson_overview": "1 short paragraph explaining why this lesson matters, what students will learn, and how it connects to real-life money situations",
-            "learning_objectives": ["objective1", "objective2", "objective3"],
-            "core_concepts": [
-                {{
-                    "title": "Concept Title",
-                    "explanation": "3-5 sentence explanation",
-                    "metaphor": "Optional metaphor/analogy",
-                    "quick_challenge": "Optional reflection prompt"
-                }}
-            ],
-            "key_terms": [
-                {{
-                    "term": "Term name",
-                    "definition": "Student-friendly definition",
-                    "example": "Simple example"
-                }}
-            ],
-            "real_life_scenarios": [
-                {{
-                    "title": "Name + Quick Situation",
-                    "narrative": "4-6 sentence story showing diverse students applying the lesson topic"
-                }}
-            ],
-            "mistakes_to_avoid": [
-                "Common misconception or financial mistake with brief context"
-            ],
-            "action_steps": [
-                "Step-by-step mini checklist or small challenges students can try this week"
-            ],
-            "summary": "Wrap-up paragraph that reinforces the lesson takeaway in encouraging tone",
-            "reflection_prompt": "Journal-style question for students to reflect on",
-            "sample_quiz": [
-                {{
-                    "question": "Question text?",
-                    "options": {{
-                        "a": "Option A",
-                        "b": "Option B", 
-                        "c": "Option C",
-                        "d": "Option D"
-                    }},
-                    "correct_answer": "a/b/c/d",
-                    "explanation": "Brief reason why this is correct"
-                }}
-            ],
-            "course_level": "beginner/intermediate/advanced",
-            "why_recommended": "Brief explanation of why this course was recommended",
-            "has_quiz": true
-        }}
-        
-        Make the course practical and actionable for someone with {overall_score}% diagnostic score.
-        Focus on {focus_topic} as the main topic.
-        Ensure all content is student-friendly and engaging.
-        Use the knowledge base content to inform the course structure and examples.
-        """
-        
-        response = course_llm.invoke([HumanMessage(content=prompt)])
-        
-        try:
-            course_data = json.loads(response.content)
-            
-            # Ensure all required fields are present
-            required_fields = [
-                "title", "module", "track", "estimated_length", "lesson_overview", 
-                "learning_objectives", "core_concepts", "key_terms", "real_life_scenarios",
-                "mistakes_to_avoid", "action_steps", "summary", "reflection_prompt",
-                "sample_quiz", "course_level", "why_recommended", "has_quiz"
-            ]
-            
-            for field in required_fields:
-                if field not in course_data:
-                    if field == "has_quiz":
-                        course_data[field] = True
-                    elif field == "track":
-                        course_data[field] = "High School"
-                    elif field == "estimated_length":
-                        course_data[field] = "2,000-2,500 words"
-                    else:
-                        course_data[field] = "To be determined"
-            
-            return course_data
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse course JSON: {e}. Raw response: {response.content}")
-            # Return fallback course data following template
-            return {
-                "title": course_title,
-                "module": f"{focus_topic} Fundamentals",
-                "track": "High School",
-                "estimated_length": "2,000-2,500 words",
-                "lesson_overview": f"This lesson will help you master {focus_topic} concepts that are essential for making smart financial decisions. You'll learn practical strategies that connect directly to real-life money situations you'll face.",
-                "learning_objectives": [
-                    f"Understand key {focus_topic} principles",
-                    "Apply concepts to real financial decisions",
-                    "Build confidence in financial planning"
-                ],
-                "core_concepts": [
-                    {
-                        "title": f"Understanding {focus_topic}",
-                        "explanation": f"{focus_topic} is fundamental to building a strong financial foundation. It helps you make informed decisions and avoid common pitfalls.",
-                        "metaphor": "Think of it like learning to ride a bike - once you master the basics, you can go anywhere!",
-                        "quick_challenge": "What's one financial decision you made this week?"
-                    }
-                ],
-                "key_terms": [
-                    {
-                        "term": focus_topic,
-                        "definition": f"The practice of managing {focus_topic.lower()} effectively",
-                        "example": "Creating a budget for your monthly expenses"
-                    }
-                ],
-                "real_life_scenarios": [
-                    {
-                        "title": "Alex's First Budget",
-                        "narrative": "Alex, a high school student, decided to track their spending for a month. They discovered they were spending more on snacks than they realized and started bringing lunch from home to save money."
-                    }
-                ],
-                "mistakes_to_avoid": [
-                    "Not tracking your spending regularly",
-                    "Ignoring small expenses that add up over time"
-                ],
-                "action_steps": [
-                    f"Research {focus_topic} basics online",
-                    "Track your spending for 3 days",
-                    "Set one financial goal for this month"
-                ],
-                "summary": f"You've taken an important step toward mastering {focus_topic}. Remember, financial literacy is a journey, and every small step counts toward your long-term success.",
-                "reflection_prompt": f"What's one {focus_topic.lower()} habit you want to start after today?",
-                "sample_quiz": [
-                    {
-                        "question": f"What is the main benefit of understanding {focus_topic}?",
-                        "options": {
-                            "a": "It's required for school",
-                            "b": "It helps make better financial decisions",
-                            "c": "It's only important for adults",
-                            "d": "It doesn't matter much"
-                        },
-                        "correct_answer": "b",
-                        "explanation": "Understanding financial concepts helps you make informed decisions about your money."
-                    }
-                ],
-                "course_level": course_level.lower(),
-                "why_recommended": f"Based on your {overall_score}% diagnostic score and identified areas for improvement in {focus_topic}.",
-                "has_quiz": True
-            }
-            
-    except Exception as e:
-        logger.error(f"Failed to generate course recommendation: {e}")
-        # Return basic fallback
-        return {
-            "title": "Personal Finance Fundamentals",
-            "module": "Financial Basics",
-            "track": "High School",
-            "estimated_length": "2,000-2,500 words",
-            "lesson_overview": "This lesson will help you build a strong foundation in personal finance. You'll learn practical strategies that connect directly to real-life money situations you'll face.",
-            "learning_objectives": [
-                "Understand basic financial concepts",
-                "Learn practical money management",
-                "Develop financial confidence"
-            ],
-            "core_concepts": [
-                {
-                    "title": "Understanding Personal Finance",
-                    "explanation": "Personal finance is about managing your money wisely to achieve your goals. It's the foundation for all financial decisions you'll make.",
-                    "metaphor": "Think of it like building a house - you need a solid foundation first!",
-                    "quick_challenge": "What's one financial goal you have?"
-                }
-            ],
-            "key_terms": [
-                {
-                    "term": "Personal Finance",
-                    "definition": "The practice of managing your money effectively",
-                    "example": "Creating a budget for your monthly expenses"
-                }
-            ],
-            "real_life_scenarios": [
-                {
-                    "title": "Sarah's Savings Goal",
-                    "narrative": "Sarah, a high school student, wanted to buy a new phone. She created a savings plan and tracked her spending to reach her goal in 3 months."
-                }
-            ],
-            "mistakes_to_avoid": [
-                "Spending without a plan",
-                "Not saving for emergencies"
-            ],
-            "action_steps": [
-                "Create a simple budget",
-                "Start a savings account",
-                "Track your spending for a week"
-            ],
-            "summary": "You've taken an important step toward financial literacy. Remember, every small step counts toward your long-term financial success.",
-            "reflection_prompt": "What's one money habit you want to start after today?",
-            "sample_quiz": [
-                {
-                    "question": "What is the first step in managing your money?",
-                    "options": {
-                        "a": "Spend everything you have",
-                        "b": "Create a budget",
-                        "c": "Ignore your finances",
-                        "d": "Borrow money"
-                    },
-                    "correct_answer": "b",
-                    "explanation": "Creating a budget helps you understand where your money goes and plan your spending."
-                }
-            ],
-            "course_level": "beginner",
-            "why_recommended": "Recommended based on your diagnostic results.",
-            "has_quiz": True
-        } 

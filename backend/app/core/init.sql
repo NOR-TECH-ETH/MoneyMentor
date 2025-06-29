@@ -73,6 +73,68 @@ CREATE TABLE IF NOT EXISTS chat_history (
 
 CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id);
 
+-- Create courses table
+CREATE TABLE IF NOT EXISTS courses (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title text NOT NULL,
+    module text NOT NULL,
+    track text NOT NULL,
+    estimated_length text,
+    lesson_overview text,
+    learning_objectives jsonb DEFAULT '[]',
+    core_concepts jsonb DEFAULT '[]',
+    key_terms jsonb DEFAULT '[]',
+    real_life_scenarios jsonb DEFAULT '[]',
+    mistakes_to_avoid jsonb DEFAULT '[]',
+    action_steps jsonb DEFAULT '[]',
+    summary text,
+    reflection_prompt text,
+    course_level text DEFAULT 'beginner',
+    why_recommended text,
+    has_quiz boolean DEFAULT true,
+    topic text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_courses_topic ON courses(topic);
+CREATE INDEX IF NOT EXISTS idx_courses_level ON courses(course_level);
+
+-- Create course_pages table
+CREATE TABLE IF NOT EXISTS course_pages (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    course_id uuid REFERENCES courses(id) ON DELETE CASCADE,
+    page_index integer NOT NULL,
+    title text NOT NULL,
+    content text NOT NULL,
+    page_type text DEFAULT 'content', -- 'content', 'quiz', 'summary'
+    quiz_data jsonb DEFAULT NULL, -- For quiz pages
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    UNIQUE(course_id, page_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_course_pages_course_id ON course_pages(course_id);
+CREATE INDEX IF NOT EXISTS idx_course_pages_page_index ON course_pages(page_index);
+
+-- Create user_course_sessions table
+CREATE TABLE IF NOT EXISTS user_course_sessions (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id text NOT NULL,
+    course_id uuid REFERENCES courses(id) ON DELETE CASCADE,
+    current_page_index integer DEFAULT 0,
+    completed boolean DEFAULT false,
+    started_at timestamp with time zone DEFAULT now(),
+    completed_at timestamp with time zone,
+    quiz_answers jsonb DEFAULT '{}', -- Store quiz answers for the course
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    UNIQUE(user_id, course_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_course_sessions_user_id ON user_course_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_course_sessions_course_id ON user_course_sessions(course_id);
+
 -- Create vector search indexes
 CREATE INDEX IF NOT EXISTS document_chunks_embedding_hnsw_idx ON document_chunks 
 USING hnsw (embedding vector_cosine_ops)

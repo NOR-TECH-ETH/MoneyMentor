@@ -4,8 +4,6 @@ import json
 import random
 from datetime import datetime
 import logging
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
 
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
@@ -16,6 +14,7 @@ from app.models.schemas import QuizQuestion, QuizType
 from app.services.content_service import ContentService
 from app.core.database import get_supabase
 from app.services.webhook_service import WebhookService
+from app.services.google_sheets_service import GoogleSheetsService
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class QuizService:
         )
         self.content_service = ContentService()
         self.supabase = get_supabase()
-        self.sheets_service = self._init_google_sheets()
+        self.sheets_service = GoogleSheetsService()
         self.webhook_service = WebhookService()
         self.quiz_frequency = settings.QUIZ_FREQUENCY
         
@@ -46,18 +45,6 @@ class QuizService:
             "Retirement Planning"
         ]
     
-    def _init_google_sheets(self):
-        """Initialize Google Sheets API client"""
-        try:
-            credentials = service_account.Credentials.from_service_account_file(
-                settings.GOOGLE_APPLICATION_CREDENTIALS,
-                scopes=['https://www.googleapis.com/auth/spreadsheets']
-            )
-            return build('sheets', 'v4', credentials=credentials)
-        except Exception as e:
-            logger.error(f"Failed to initialize Google Sheets: {e}")
-            return None
-
     async def should_trigger_diagnostic(self, user_id: str) -> bool:
         """Check if diagnostic pre-test should be triggered"""
         try:
@@ -205,9 +192,6 @@ class QuizService:
             # Store quiz in Supabase
             result = self.supabase.table('quizzes').insert(quiz_data).execute()
             
-            # Log to Google Sheets
-            await self._log_quiz_to_sheets(quiz_data)
-            
             return quiz_data
             
         except Exception as e:
@@ -239,9 +223,6 @@ class QuizService:
             
             result = self.supabase.table('quizzes').update(update_data).eq('quiz_id', quiz_id).execute()
             
-            # Log to Google Sheets
-            await self._log_responses_to_sheets(quiz_data, responses, score, analysis)
-            
             # Update user progress
             await self._update_user_progress(quiz_data['user_id'], quiz_data['type'], score, analysis)
             
@@ -268,7 +249,8 @@ class QuizService:
         selected_option: int,
         correct: bool,
         topic: str,
-        quiz_type: str = "micro"
+        quiz_type: str = "micro",
+        session_id: str = None
     ) -> bool:
         """Log a quiz attempt"""
         try:
@@ -284,6 +266,26 @@ class QuizService:
             }
             
             self.supabase.table('quiz_attempts').insert(attempt_data).execute()
+            
+            # Log to Google Sheets
+            try:
+                # Convert selected_option number to letter (0->A, 1->B, 2->C, 3->D)
+                option_letters = ['A', 'B', 'C', 'D']
+                selected_letter = option_letters[selected_option] if 0 <= selected_option < 4 else str(selected_option)
+                
+                quiz_log_data = {
+                    "user_id": user_id,
+                    "quiz_id": quiz_id,
+                    "topic_tag": topic,
+                    "selected_option": selected_letter,
+                    "correct": correct,
+                    "session_id": session_id or user_id  # Use session_id if provided, otherwise fallback to user_id
+                }
+                self.sheets_service.log_quiz_response(quiz_log_data)
+                
+            except Exception as e:
+                logger.warning(f"Failed to log quiz response to Google Sheets: {e}")
+                # Don't fail the main request if logging fails
             
             # Send to webhook
             await self.webhook_service.log_quiz_attempt(attempt_data)
@@ -360,71 +362,6 @@ class QuizService:
         except Exception as e:
             logger.error(f"Failed to analyze responses: {e}")
             return {"error": str(e)}
-
-    async def _log_quiz_to_sheets(self, quiz_data: Dict[str, Any]) -> bool:
-        """Log quiz data to Google Sheets"""
-        try:
-            if not self.sheets_service:
-                return False
-                
-            values = [[
-                quiz_data['quiz_id'],
-                quiz_data['user_id'],
-                quiz_data['type'],
-                quiz_data['created_at'],
-                quiz_data.get('topic', ''),
-                len(quiz_data['questions'])
-            ]]
-            
-            body = {
-                'values': values
-            }
-            
-            self.sheets_service.spreadsheets().values().append(
-                spreadsheetId=settings.GOOGLE_SHEET_ID,
-                range='Quizzes!A:F',
-                valueInputOption='RAW',
-                body=body
-            ).execute()
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to log quiz to sheets: {e}")
-            return False
-
-    async def _log_responses_to_sheets(self, quiz_data: Dict[str, Any], responses: List[Dict[str, Any]], 
-                                     score: float, analysis: Dict[str, Any]) -> bool:
-        """Log quiz responses to Google Sheets"""
-        try:
-            if not self.sheets_service:
-                return False
-                
-            values = [[
-                quiz_data['quiz_id'],
-                quiz_data['user_id'],
-                quiz_data['type'],
-                datetime.utcnow().isoformat(),
-                score,
-                str(analysis)
-            ]]
-            
-            body = {
-                'values': values
-            }
-            
-            self.sheets_service.spreadsheets().values().append(
-                spreadsheetId=settings.GOOGLE_SHEET_ID,
-                range='QuizResponses!A:F',
-                valueInputOption='RAW',
-                body=body
-            ).execute()
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to log responses to sheets: {e}")
-            return False
 
     async def _update_user_progress(self, user_id: str, quiz_type: str, score: float, 
                                   analysis: Dict[str, Any]) -> bool:

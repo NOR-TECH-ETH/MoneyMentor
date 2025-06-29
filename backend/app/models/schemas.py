@@ -83,6 +83,7 @@ class QuizSubmissionBatch(BaseModel):
     """Schema for submitting multiple quiz responses at once"""
     user_id: str = Field(..., description="User identifier")
     quiz_type: str = Field("micro", description="Type of quiz (micro, diagnostic, etc.)")
+    session_id: Optional[str] = Field(None, description="Session identifier for tracking")
     responses: List[Dict[str, Any]] = Field(..., description="List of quiz responses")
     
     @field_validator('responses')
@@ -293,4 +294,108 @@ class ChatMessageRequest(BaseModel):
                 "query": "What is compound interest?",
                 "session_id": "123e4567-e89b-12d3-a456-426614174000"
             }
-        } 
+        }
+
+# Course-related schemas
+class CoursePage(BaseModel):
+    """Schema for a single course page"""
+    id: Optional[str] = Field(None, description="Page ID")
+    page_index: int = Field(..., description="Page index (0-based)")
+    title: str = Field(..., description="Page title")
+    content: str = Field(..., description="Page content")
+    page_type: str = Field("content", description="Page type: content, quiz, summary")
+    quiz_data: Optional[Dict[str, Any]] = Field(None, description="Quiz data for quiz pages")
+
+class Course(BaseModel):
+    """Schema for a course"""
+    id: Optional[str] = Field(None, description="Course ID")
+    title: str = Field(..., description="Course title")
+    module: str = Field(..., description="Module name")
+    track: str = Field(..., description="Track (e.g., 'High School')")
+    estimated_length: str = Field(..., description="Estimated course length")
+    lesson_overview: str = Field(..., description="Brief overview")
+    learning_objectives: List[str] = Field(..., description="List of learning objectives")
+    core_concepts: List[Dict[str, str]] = Field(..., description="List of core concepts")
+    key_terms: List[Dict[str, str]] = Field(..., description="List of key terms")
+    real_life_scenarios: List[Dict[str, str]] = Field(..., description="List of real-life scenarios")
+    mistakes_to_avoid: List[str] = Field(..., description="List of mistakes to avoid")
+    action_steps: List[str] = Field(..., description="List of action steps")
+    summary: str = Field(..., description="Course summary")
+    reflection_prompt: str = Field(..., description="Reflection prompt")
+    course_level: str = Field("beginner", description="Course difficulty level")
+    why_recommended: str = Field(..., description="Why this course was recommended")
+    has_quiz: bool = Field(True, description="Whether the course includes quizzes")
+    topic: str = Field(..., description="Course topic")
+    pages: Optional[List[CoursePage]] = Field(None, description="Course pages")
+
+class CourseSession(BaseModel):
+    """Schema for user course session"""
+    id: Optional[str] = Field(None, description="Session ID")
+    user_id: str = Field(..., description="User ID")
+    course_id: str = Field(..., description="Course ID")
+    current_page_index: int = Field(0, description="Current page index")
+    completed: bool = Field(False, description="Whether course is completed")
+    started_at: Optional[datetime] = Field(None, description="When course was started")
+    completed_at: Optional[datetime] = Field(None, description="When course was completed")
+    quiz_answers: Dict[str, Any] = Field(default_factory=dict, description="Quiz answers")
+
+class CourseStartRequest(BaseModel):
+    """Schema for starting a course"""
+    user_id: str = Field(..., description="User ID")
+    session_id: str = Field(..., description="Session ID")
+    course_id: str = Field(..., description="Course ID")
+
+class CourseStartResponse(BaseModel):
+    """Schema for course start response"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    message: str = Field(..., description="Response message")
+    data: Optional[Dict[str, Any]] = Field(None, description="Response data")
+    current_page: Optional[CoursePage] = Field(None, description="Current page")
+    course_session: Optional[CourseSession] = Field(None, description="Course session")
+
+class CourseNavigateRequest(BaseModel):
+    """Schema for navigating course pages"""
+    user_id: str = Field(..., description="User ID")
+    session_id: str = Field(..., description="Session ID")
+    course_id: str = Field(..., description="Course ID")
+    page_index: int = Field(..., description="Target page index")
+
+class CourseNavigateResponse(BaseModel):
+    """Schema for course navigation response"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    message: str = Field(..., description="Response message")
+    data: Optional[Dict[str, Any]] = Field(None, description="Response data")
+    current_page: Optional[CoursePage] = Field(None, description="Current page")
+    total_pages: int = Field(..., description="Total number of pages")
+    is_last_page: bool = Field(..., description="Whether this is the last page")
+
+class CourseQuizSubmitRequest(BaseModel):
+    """Schema for submitting course quiz answers"""
+    user_id: str = Field(..., description="User ID")
+    session_id: str = Field(..., description="Session ID")
+    course_id: str = Field(..., description="Course ID")
+    page_index: int = Field(..., description="Page index")
+    selected_option: str = Field(..., description="Selected answer (A, B, C, or D)")
+    correct: bool = Field(..., description="Whether the answer was correct")
+
+class CourseQuizSubmitResponse(BaseModel):
+    """Schema for course quiz submission response"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    message: str = Field(..., description="Response message")
+    data: Optional[Dict[str, Any]] = Field(None, description="Response data")
+    correct: bool = Field(..., description="Whether the answer was correct")
+    explanation: str = Field(..., description="Explanation for the answer")
+    next_page: Optional[CoursePage] = Field(None, description="Next page if available")
+
+class CourseCompleteRequest(BaseModel):
+    """Schema for completing a course"""
+    user_id: str = Field(..., description="User ID")
+    session_id: str = Field(..., description="Session ID")
+    course_id: str = Field(..., description="Course ID")
+
+class CourseCompleteResponse(BaseModel):
+    """Schema for course completion response"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    message: str = Field(..., description="Response message")
+    data: Optional[Dict[str, Any]] = Field(None, description="Response data")
+    completion_summary: Optional[Dict[str, Any]] = Field(None, description="Completion summary") 
