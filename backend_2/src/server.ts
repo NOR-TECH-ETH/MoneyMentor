@@ -23,7 +23,7 @@ app.use(compression());
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:3000'],
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:3000', 'https://frontend-new-647308514289.us-central1.run.app'],
   credentials: true
 }));
 
