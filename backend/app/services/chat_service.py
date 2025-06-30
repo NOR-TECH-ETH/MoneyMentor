@@ -3,6 +3,9 @@ import logging
 from datetime import datetime
 import uuid
 from fastapi import HTTPException
+from app.agents.crew import money_mentor_crew
+from app.services.engagement_service import EngagementService
+
 import json
 
 from app.utils.session import get_session, create_session, add_chat_message, add_quiz_response, update_progress
@@ -24,8 +27,7 @@ class ChatService:
     ) -> Dict[str, Any]:
         """Process a chat message and return the response"""
         try:
-            # Import here to avoid circular imports
-            from app.agents.crew import money_mentor_crew
+
             
             # Get or create session
             session = await get_session(session_id)
@@ -126,7 +128,6 @@ class ChatService:
             try:
                 # Lazy initialization to avoid circular imports
                 if self.engagement_service is None:
-                    from app.services.engagement_service import EngagementService
                     self.engagement_service = EngagementService()
                 
                 # Run engagement tracking in background without waiting

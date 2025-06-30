@@ -1,51 +1,59 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 import logging
+from datetime import datetime
 
 from app.models.schemas import CalculationRequest, CalculationResult
-from app.agents.crew import money_mentor_crew
 from app.services.calculation_service import CalculationService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/debt-payoff", response_model=CalculationResult)
-async def calculate_debt_payoff(request: CalculationRequest):
-    """Calculate debt payoff scenarios using CrewAI calculation agent"""
+def get_calculation_service() -> CalculationService:
+    """Get CalculationService instance"""
+    return CalculationService()
+
+@router.post("/credit-card-payoff", response_model=CalculationResult)
+async def calculate_credit_card_payoff(
+    request: CalculationRequest,
+    calculation_service: CalculationService = Depends(get_calculation_service)
+):
+    """Calculate credit card payoff timeline - matches client requirements exactly"""
     try:
-        # Create calculation crew
-        calc_crew = money_mentor_crew.create_calculation_crew({
-            "calculation_type": "debt_payoff",
-            "principal": request.principal,
-            "interest_rate": request.interest_rate,
+        # Extract parameters for credit card payoff
+        params = {
+            "balance": request.principal,
+            "apr": request.interest_rate,
             "monthly_payment": request.monthly_payment,
             "target_months": request.target_months
-        })
+        }
         
-        # Execute the crew
-        result = calc_crew.kickoff()
+        # Perform calculation
+        result = await calculation_service.calculate("credit_card_payoff", params)
         
-        # Parse and return result
         return CalculationResult(**result)
         
     except Exception as e:
-        logger.error(f"Debt payoff calculation failed: {e}")
-        raise HTTPException(status_code=500, detail="Debt payoff calculation failed")
+        logger.error(f"Credit card payoff calculation failed: {e}")
+        raise HTTPException(status_code=500, detail="Credit card payoff calculation failed")
 
 @router.post("/savings-goal", response_model=CalculationResult)
-async def calculate_savings_goal(request: CalculationRequest):
-    """Calculate savings goal requirements"""
+async def calculate_savings_goal(
+    request: CalculationRequest,
+    calculation_service: CalculationService = Depends(get_calculation_service)
+):
+    """Calculate savings goal projection - matches client requirements exactly"""
     try:
-        # Create calculation crew
-        calc_crew = money_mentor_crew.create_calculation_crew({
-            "calculation_type": "savings_goal",
+        # Extract parameters for savings goal
+        params = {
             "target_amount": request.target_amount,
-            "interest_rate": request.interest_rate,
-            "target_months": request.target_months
-        })
+            "timeframe_months": request.target_months,
+            "current_savings": 0,  # Default to 0 if not provided
+            "interest_rate": request.interest_rate
+        }
         
-        # Execute the crew
-        result = calc_crew.kickoff()
+        # Perform calculation
+        result = await calculation_service.calculate("savings_goal", params)
         
         return CalculationResult(**result)
         
@@ -53,43 +61,62 @@ async def calculate_savings_goal(request: CalculationRequest):
         logger.error(f"Savings goal calculation failed: {e}")
         raise HTTPException(status_code=500, detail="Savings goal calculation failed")
 
-@router.post("/loan-amortization", response_model=CalculationResult)
-async def calculate_loan_amortization(request: CalculationRequest):
-    """Calculate loan amortization schedule"""
+@router.post("/student-loan", response_model=CalculationResult)
+async def calculate_student_loan_amortization(
+    request: CalculationRequest,
+    calculation_service: CalculationService = Depends(get_calculation_service)
+):
+    """Calculate student loan amortization - matches client requirements exactly"""
     try:
-        # Create calculation crew
-        calc_crew = money_mentor_crew.create_calculation_crew({
-            "calculation_type": "loan_amortization",
+        # Extract parameters for student loan amortization
+        params = {
             "principal": request.principal,
-            "interest_rate": request.interest_rate,
+            "apr": request.interest_rate,
+            "term_months": request.target_months or 360,  # Default to 30 years
             "monthly_payment": request.monthly_payment
-        })
+        }
         
-        # Execute the crew
-        result = calc_crew.kickoff()
+        # Perform calculation
+        result = await calculation_service.calculate("student_loan", params)
         
         return CalculationResult(**result)
         
     except Exception as e:
-        logger.error(f"Loan amortization calculation failed: {e}")
-        raise HTTPException(status_code=500, detail="Loan amortization calculation failed")
+        logger.error(f"Student loan amortization calculation failed: {e}")
+        raise HTTPException(status_code=500, detail="Student loan amortization calculation failed")
 
-@router.post("/custom")
-async def custom_calculation(calculation_data: Dict[str, Any]):
-    """Perform custom financial calculations"""
+@router.post("/calculate")
+async def generic_calculation(
+    calculation_data: Dict[str, Any],
+    calculation_service: CalculationService = Depends(get_calculation_service)
+):
+    """Generic calculation endpoint - matches client requirements exactly"""
     try:
-        # Create calculation crew with custom parameters
-        calc_crew = money_mentor_crew.create_calculation_crew(calculation_data)
+        # Validate required fields
+        if "type" not in calculation_data:
+            raise HTTPException(status_code=400, detail="Calculation type is required")
         
-        # Execute the crew
-        result = calc_crew.kickoff()
+        calculation_type = calculation_data["type"]
+        inputs = calculation_data.get("inputs", {})
+        
+        # Perform calculation
+        result = await calculation_service.calculate(calculation_type, inputs)
         
         return {
             "success": True,
-            "result": result,
-            "disclaimer": "These are estimates only. Please consult with a certified financial professional for personalized advice."
+            "data": result,
+            "disclaimer": "Estimates only. Verify with a certified financial professional."
         }
         
     except Exception as e:
-        logger.error(f"Custom calculation failed: {e}")
-        raise HTTPException(status_code=500, detail="Custom calculation failed") 
+        logger.error(f"Generic calculation failed: {e}")
+        raise HTTPException(status_code=500, detail="Calculation failed")
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint for the calculation service"""
+    return {
+        "status": "healthy",
+        "service": "calc-fn",
+        "timestamp": datetime.utcnow().isoformat()
+    } 

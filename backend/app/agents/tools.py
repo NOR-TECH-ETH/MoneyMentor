@@ -4,6 +4,7 @@ from crewai.tools import BaseTool
 import logging
 from datetime import datetime
 from supabase import Client
+import json
 
 from app.services.quiz_service import QuizService
 from app.services.calculation_service import CalculationService
@@ -91,30 +92,81 @@ class QuizLoggerTool(BaseTool):
             }
 
 class FinancialCalculatorTool(BaseTool):
-    """Tool for calculating financial metrics."""
+    """Tool for calculating financial metrics"""
     
     name: str = "Financial Calculator"
-    description: str = "Calculates financial metrics like ROI, NPV, or loan payments. Input: JSON with calculation_type and params"
+    description: str = """Calculates financial metrics for debt payoff, savings goals, and loan amortization. 
+    Supports three calculation types:
+    1. credit_card_payoff - Calculate credit card payoff timeline
+    2. savings_goal - Calculate monthly savings needed for a goal
+    3. student_loan - Calculate loan amortization schedule
+    
+    Input: JSON with calculation_type and params. The tool will automatically extract parameters from natural language."""
     
     class ArgsSchema(BaseModel):
-        calculation_type: str = Field(..., description="Type of calculation (roi, npv, pmt)")
+        calculation_type: str = Field(..., description="Type of calculation (credit_card_payoff, savings_goal, student_loan)")
         params: Dict[str, Any] = Field(..., description="Calculation parameters")
     
     calc_service: CalculationService = Field(default_factory=CalculationService)
     
     async def _run(self, calculation_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
         try:
+            # Validate calculation type
+            valid_types = ["credit_card_payoff", "savings_goal", "student_loan"]
+            if calculation_type not in valid_types:
+                return {
+                    "success": False,
+                    "error": f"Invalid calculation_type. Must be one of: {valid_types}",
+                    "details": "Supported calculation types: credit_card_payoff, savings_goal, student_loan"
+                }
+            
+            # Perform the calculation using the deterministic service
             result = await self.calc_service.calculate(calculation_type, params)
+            
+            # Ensure the result matches client requirements format
+            if not isinstance(result, dict):
+                return {
+                    "success": False,
+                    "error": "Invalid result format from calculation service",
+                    "details": "Expected dictionary result with monthly_payment, months_to_payoff, total_interest, step_by_step_plan"
+                }
+            
+            # Validate required fields are present
+            required_fields = ["monthly_payment", "months_to_payoff", "total_interest", "step_by_step_plan"]
+            missing_fields = [field for field in required_fields if field not in result]
+            
+            if missing_fields:
+                return {
+                    "success": False,
+                    "error": f"Missing required fields in result: {missing_fields}",
+                    "details": "Result must include monthly_payment, months_to_payoff, total_interest, step_by_step_plan"
+                }
+            
+            # Format the response according to Step 3 requirements
+            formatted_response = f"""Here is your calculation result:
+```json
+{json.dumps(result, indent=2)}
+```
+
+Based on the calculation results, your 'monthly_payment' would be ${result.get('monthly_payment', 'N/A')}. The 'months_to_payoff' shows it will take {result.get('months_to_payoff', 'N/A')} months to clear the debt or reach your goal. The 'total_interest' you'll pay or earn is ${result.get('total_interest', 'N/A')}. Following the 'step_by_step_plan' will help you stay on track.
+
+Estimates only. Verify with a certified financial professional."""
+            
             return {
                 "success": True,
-                "result": result
+                "result": result,
+                "calculation_type": calculation_type,
+                "params_used": params,
+                "_step3_marker": "CALCULATION_RESULT_READY_FOR_FORMATTING",
+                "_formatted_response": formatted_response
             }
+            
         except Exception as e:
             logger.error(f"Failed to perform calculation: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "details": "Failed to perform calculation"
+                "details": "Failed to perform calculation. Please check your input parameters."
             }
 
 class ContentRetrievalTool(BaseTool):

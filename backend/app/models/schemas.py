@@ -128,19 +128,52 @@ class QuizSubmissionBatch(BaseModel):
         }
 
 class CalculationRequest(BaseModel):
-    calculation_type: str = Field(..., description="Type of calculation (payoff, savings, loan)")
-    principal: float = Field(..., description="Principal amount")
+    """Schema for calculation requests - matches client requirements exactly"""
+    calculation_type: str = Field(..., description="Type of calculation (credit_card_payoff, savings_goal, student_loan)")
+    principal: Optional[float] = Field(None, description="Principal amount for loans/credit cards")
     interest_rate: float = Field(..., description="Annual interest rate (as percentage)")
     target_months: Optional[int] = Field(None, description="Target months for payoff/savings")
     monthly_payment: Optional[float] = Field(None, description="Monthly payment amount")
     target_amount: Optional[float] = Field(None, description="Target savings amount")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "calculation_type": "credit_card_payoff",
+                "principal": 6000,
+                "interest_rate": 22.0,
+                "target_months": 12,
+                "monthly_payment": None
+            }
+        }
 
 class CalculationResult(BaseModel):
+    """Schema for calculation results - matches client requirements exactly"""
     monthly_payment: Optional[float] = Field(None, description="Required monthly payment")
     months_to_payoff: Optional[int] = Field(None, description="Months to complete payoff")
-    total_interest: float = Field(..., description="Total interest paid")
-    step_by_step_plan: List[str] = Field(..., description="Detailed plan steps")
+    total_interest: float = Field(..., description="Total interest paid/earned")
+    step_by_step_plan: List[str] = Field(..., description="Array of strings with step-by-step plan")
     total_amount: float = Field(..., description="Total amount paid/saved")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "monthly_payment": 567.89,
+                "months_to_payoff": 12,
+                "total_interest": 814.68,
+                "step_by_step_plan": [
+                    "Starting balance: $6,000.00",
+                    "APR: 22% (monthly rate: 1.83%)",
+                    "Monthly payment: $567.89",
+                    "Month 1: Pay $456.23 principal, $111.66 interest",
+                    "Remaining balance after month 1: $5,543.77",
+                    "Continue this pattern for 12 months",
+                    "Total interest paid: $814.68",
+                    "Total amount paid: $6,814.68"
+                ],
+                "total_amount": 6814.68
+            }
+        }
 
 class UserSession(BaseModel):
     user_id: str = Field(..., description="Unique user identifier")

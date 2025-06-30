@@ -23,8 +23,8 @@ class MoneyMentorCrew:
             model_name=settings.OPENAI_MODEL_GPT4,
             openai_api_key=settings.OPENAI_API_KEY,
             temperature=0.1,
-            request_timeout=120,
-            max_retries=3,
+            request_timeout=30,
+            max_retries=2,
             streaming=False,
             provider="openai"
         )
@@ -33,8 +33,8 @@ class MoneyMentorCrew:
             model_name=settings.OPENAI_MODEL_GPT4_MINI,
             openai_api_key=settings.OPENAI_API_KEY,
             temperature=0.3,
-            request_timeout=120,
-            max_retries=3,
+            request_timeout=30,
+            max_retries=2,
             streaming=False,
             provider="openai"
         )
@@ -105,8 +105,55 @@ class MoneyMentorCrew:
                         Previous chat history:
                         {self._format_chat_history(chat_history)}
                         
-                        If the message is a casual greeting (like 'hi', 'hello', 'hey'), respond with a friendly greeting.
-                        For financial questions, use the ContentRetrievalTool with both query and limit parameters:
+                        IMPORTANT CALCULATION DETECTION:
+                        If the user asks for financial calculations (like "how much", "how long", "payoff", "savings", "loan"), 
+                        use the FinancialCalculatorTool to provide accurate, deterministic results. The tool supports:
+                        1. Credit-card payoff timeline (calculation_type: "credit_card_payoff")
+                        2. Savings goal projection (calculation_type: "savings_goal") 
+                        3. Student-loan amortisation (calculation_type: "student_loan")
+                        
+                        When using the FinancialCalculatorTool:
+                        - Extract the relevant parameters from the user's message
+                        - Use EXACT parameter names:
+                          * credit_card_payoff: {{"balance": amount, "apr": rate, "target_months": months}}
+                          * savings_goal: {{"target_amount": amount, "interest_rate": rate, "target_months": months}}
+                          * student_loan: {{"principal": amount, "interest_rate": rate, "monthly_payment": payment}}
+                        - Call the tool with the appropriate calculation_type and params
+                        
+                        MANDATORY STEP 3 FORMAT - YOU MUST FOLLOW THIS EXACTLY:
+                        After getting calculation results from FinancialCalculatorTool, your response MUST follow this format:
+                        
+                        1. START with: "Here is your calculation result:"
+                        2. PASTE the complete JSON result in a code block like this:
+                        ```json
+                        [PASTE THE EXACT JSON FROM THE TOOL HERE]
+                        ```
+                        3. THEN explain the results, referencing specific JSON fields by name
+                        4. END with exactly: "Estimates only. Verify with a certified financial professional."
+                        
+                        CRITICAL: You MUST include the raw tool output in your response so it can be properly formatted.
+                        The tool output will look like: {{"success": True, "result": {{"monthly_payment": 561.57, ...}}, "_step3_marker": "CALCULATION_RESULT_READY_FOR_FORMATTING"}}
+                        
+                        EXAMPLE RESPONSE FORMAT:
+                        Here is your calculation result:
+                        ```json
+                        {{
+                          "monthly_payment": 561.57,
+                          "months_to_payoff": 12,
+                          "total_interest": 738.8,
+                          "step_by_step_plan": [
+                            "Starting balance: $6,000.00",
+                            "APR: 22.0% (monthly rate: 1.83%)",
+                            "Monthly payment: $561.57"
+                          ]
+                        }}
+                        ```
+                        
+                        Based on the calculation results, your 'monthly_payment' would be $561.57. The 'months_to_payoff' shows it will take 12 months to clear the debt. The 'total_interest' you'll pay is $738.80. Following the 'step_by_step_plan' will help you stay on track.
+                        
+                        Estimates only. Verify with a certified financial professional.
+                        
+                        For general financial questions, use the ContentRetrievalTool with both query and limit parameters:
                         - query: the search term from the user's question
                         - limit: 5 (default number of results)
                         
@@ -115,11 +162,11 @@ class MoneyMentorCrew:
                         Keep your responses natural and conversational while maintaining professionalism.
                         """,
                         agent=self.financial_tutor_agent,
-                        expected_output="A friendly and helpful response that matches the tone of the user's message"
+                        expected_output="A friendly and helpful response that matches the tone of the user's message. If calculations are performed, you MUST include the structured JSON results in your explanation and provide a comprehensive step-by-step breakdown. Always end with the exact disclaimer: 'Estimates only. Verify with a certified financial professional.'"
                     )
                 ],
                 process=Process.sequential,
-                verbose=settings.DEBUG
+                verbose=False  # Reduced logging overhead for faster responses
             )
             
             try:
@@ -134,41 +181,185 @@ class MoneyMentorCrew:
                 elif not isinstance(result, str):
                     result = str(result)
                 
+                # Post-processing: Enforce Step 3 format if calculation was performed but format is missing
+                def needs_step3_enforcement(msg):
+                    # More specific detection based on client requirements
+                    # Focus on numeric/"how much/how long" queries, not general financial terms
+                    
+                    # Check for calculation-specific patterns (more restrictive)
+                    calculation_patterns = [
+                        r'\$\d+',  # Dollar amounts
+                        r'\d+\s*%',  # Percentage rates
+                        r'\d+\s*(?:months?|years?)',  # Time periods
+                        r'how\s+much',  # "how much" queries
+                        r'how\s+long',  # "how long" queries
+                        r'payoff',  # Payoff timeline
+                        r'amortiz',  # Amortization
+                        r'monthly\s+payment',  # Monthly payment
+                        r'clear\s+(?:it|the\s+debt)',  # Clear debt
+                        r'reach\s+(?:goal|target)',  # Reach goal
+                        r'borrow\s+\$\d+',  # Borrow amounts
+                        r'repay\s+with\s+\$\d+',  # Repay with amounts
+                    ]
+                    
+                    # Check if message contains calculation patterns
+                    import re
+                    has_calculation_pattern = any(re.search(pattern, msg.lower()) for pattern in calculation_patterns)
+                    
+                    # Additional check for specific calculation keywords (more restrictive)
+                    calculation_keywords = [
+                        'payoff timeline',
+                        'savings goal projection', 
+                        'student-loan amortisation',
+                        'monthly payment',
+                        'months to payoff',
+                        'total interest'
+                    ]
+                    
+                    has_calculation_keyword = any(keyword in msg.lower() for keyword in calculation_keywords)
+                    
+                    # Exclude educational questions that start with "why", "what", "how" (without numbers)
+                    educational_patterns = [
+                        r'^why\s+',  # Questions starting with "why"
+                        r'^what\s+is',  # Questions starting with "what is"
+                        r'^explain\s+',  # Questions starting with "explain"
+                        r'^describe\s+',  # Questions starting with "describe"
+                        r'^tell\s+me\s+about',  # Questions starting with "tell me about"
+                    ]
+                    
+                    is_educational_question = any(re.search(pattern, msg.lower()) for pattern in educational_patterns)
+                    
+                    # Only trigger if calculation patterns exist AND it's not an educational question AND no JSON block exists
+                    return (
+                        (has_calculation_pattern or has_calculation_keyword) and
+                        not is_educational_question and
+                        '```json' not in msg
+                    )
+
+                # Enhanced post-processing: Capture tool outputs from the crew execution
+                calculation_result = None
+                
+                # Try to extract calculation result from the crew's execution logs
+                if hasattr(chat_crew, 'tasks') and chat_crew.tasks:
+                    for task in chat_crew.tasks:
+                        if hasattr(task, 'output') and task.output:
+                            # Look for tool output in task execution
+                            task_str = str(task.output)
+                            if 'Financial Calculator' in task_str:
+                                import re
+                                import json
+                                import ast
+                                
+                                # Try to extract the tool output
+                                tool_pattern = r"Tool Output:\s*({[\s\S]*?})\s*\n"
+                                match = re.search(tool_pattern, task_str)
+                                if match:
+                                    try:
+                                        # Try JSON first, then ast.literal_eval
+                                        try:
+                                            tool_dict = json.loads(match.group(1).replace("'", '"'))
+                                        except Exception:
+                                            tool_dict = ast.literal_eval(match.group(1))
+                                        
+                                        if 'result' in tool_dict:
+                                            calculation_result = tool_dict['result']
+                                            logger.info("Successfully extracted calculation result from task output")
+                                    except Exception as e:
+                                        logger.error(f"Failed to parse tool output from task: {e}")
+                
+                # Alternative: Look for the special marker in the result string itself
+                if not calculation_result:
+                    import re
+                    import json
+                    import ast
+                    
+                    # Look for the special marker pattern
+                    marker_pattern = r"\{[^}]*\"_step3_marker\"[^}]*\"CALCULATION_RESULT_READY_FOR_FORMATTING\"[^}]*\}"
+                    match = re.search(marker_pattern, str(result))
+                    if match:
+                        try:
+                            # Try to parse the dict containing the marker
+                            try:
+                                tool_dict = json.loads(match.group(0).replace("'", '"'))
+                            except Exception:
+                                tool_dict = ast.literal_eval(match.group(0))
+                            
+                            if 'result' in tool_dict:
+                                calculation_result = tool_dict['result']
+                                logger.info("Successfully extracted calculation result using marker")
+                            
+                            # Check if there's a pre-formatted response
+                            if '_formatted_response' in tool_dict:
+                                result = tool_dict['_formatted_response']
+                                logger.info("Applied pre-formatted response from tool")
+                                calculation_result = None  # Skip further processing
+                        except Exception as e:
+                            logger.error(f"Failed to parse tool output with marker: {e}")
+                
+                # If we found a calculation result, enforce Step 3 format
+                if calculation_result and needs_step3_enforcement(str(result)):
+                    import json
+                    formatted_response = f"""Here is your calculation result:
+```json
+{json.dumps(calculation_result, indent=2)}
+```
+
+Based on the calculation results, your 'monthly_payment' would be ${calculation_result.get('monthly_payment', 'N/A')}. The 'months_to_payoff' shows it will take {calculation_result.get('months_to_payoff', 'N/A')} months to clear the debt or reach your goal. The 'total_interest' you'll pay or earn is ${calculation_result.get('total_interest', 'N/A')}. Following the 'step_by_step_plan' will help you stay on track.
+
+Estimates only. Verify with a certified financial professional."""
+                    
+                    result = formatted_response
+                    logger.info("Applied Step 3 format enforcement with captured tool output")
+                
+                # Fallback: If no calculation result was captured but enforcement is needed
+                elif needs_step3_enforcement(str(result)):
+                    import re
+                    import json
+                    import ast
+                    extracted = None
+                    # Try to extract tool output from logs or agent output
+                    tool_output_pattern = r"Tool Output:\s*({[\s\S]*?})\s*\n"
+                    match = re.search(tool_output_pattern, str(result))
+                    if match:
+                        try:
+                            # Try JSON first
+                            try:
+                                tool_dict = json.loads(match.group(1).replace("'", '"'))
+                            except Exception:
+                                tool_dict = ast.literal_eval(match.group(1))
+                            if 'result' in tool_dict:
+                                extracted = tool_dict['result']
+                        except Exception as e:
+                            logger.error(f"Failed to parse tool output: {e}")
+                    # If not found, try to extract a JSON-like dict from the message (single or double quotes)
+                    if not extracted:
+                        json_like_pattern = r"\{[\s\S]*?monthly_payment[\s\S]*?\}"  # greedy match for any dict with monthly_payment
+                        match2 = re.search(json_like_pattern, str(result))
+                        if match2:
+                            try:
+                                try:
+                                    extracted = json.loads(match2.group(0).replace("'", '"'))
+                                except Exception:
+                                    extracted = ast.literal_eval(match2.group(0))
+                            except Exception as e:
+                                logger.error(f"Failed to parse inline JSON: {e}")
+                    # If still not found, fallback
+                    if extracted:
+                        formatted_response = f"""Here is your calculation result:\n```json\n{json.dumps(extracted, indent=2)}\n```\n\nBased on the calculation results, your 'monthly_payment' would be ${extracted.get('monthly_payment', 'N/A')}. The 'months_to_payoff' shows it will take {extracted.get('months_to_payoff', 'N/A')} months to clear the debt or reach your goal. The 'total_interest' you'll pay or earn is ${extracted.get('total_interest', 'N/A')}. Following the 'step_by_step_plan' will help you stay on track.\n\nEstimates only. Verify with a certified financial professional."""
+                        result = formatted_response
+                        logger.info("Applied robust post-processing to enforce Step 3 format")
+                    else:
+                        # Fallback message
+                        result = ("[Formatting Error] The calculation was performed but the response did not follow the required format. "
+                                  "Please try rephrasing your question or contact support if this persists.\n\nEstimates only. Verify with a certified financial professional.")
+                        logger.warning("Step 3 enforcement failed: could not extract calculation result.")
+                
                 # Initialize response dictionary
                 response = {
                     "message": result,
                     "session_id": session_id,
                     "quiz": None
                 }
-                
-                # Check if we should generate a quiz
-                # should_quiz = len(chat_history) % settings.QUIZ_TRIGGER_INTERVAL == 0
-                
-                # if should_quiz:
-                #     try:
-                #         # Generate a quiz
-                #         quiz_crew = self.create_quiz_crew(
-                #             topic="General Finance",  # You might want to extract topic from chat history
-                #             quiz_type="micro",
-                #             user_id=session_id
-                #         )
-                        
-                #         # Generate quiz
-                #         quiz_result = await quiz_crew.kickoff_async()
-                        
-                #         # Ensure quiz result is a string
-                #         if hasattr(quiz_result, 'raw_output'):
-                #             quiz_result = quiz_result.raw_output
-                #         elif hasattr(quiz_result, 'output'):
-                #             quiz_result = quiz_result.output
-                #         elif not isinstance(quiz_result, str):
-                #             quiz_result = str(quiz_result)
-                            
-                #         response["quiz"] = quiz_result
-                #     except Exception as quiz_error:
-                #         logger.error(f"Quiz generation failed: {str(quiz_error)}")
-                #         # Don't fail the whole request if quiz generation fails
-                #         response["quiz"] = None
                 
                 return response
                 
@@ -195,17 +386,20 @@ class MoneyMentorCrew:
             role="Financial Education Tutor",
             goal="Provide comprehensive financial education through conversational teaching, "
                  "helping users understand investing basics, personal finance concepts, and "
-                 "making informed financial decisions.",
+                 "making informed financial decisions. When users ask for financial calculations, "
+                 "use the FinancialCalculatorTool to provide accurate, deterministic results.",
             backstory="You are an experienced financial educator with expertise in teaching "
                      "complex financial concepts in simple, understandable terms. You have "
                      "access to comprehensive course materials and can retrieve relevant "
-                     "information to answer user questions accurately.",
-            tools=[ContentRetrievalTool(), SessionManagerTool()],
+                     "information to answer user questions accurately. You can also perform "
+                     "precise financial calculations for debt payoff, savings goals, and loan "
+                     "amortization using mathematical formulas.",
+            tools=[ContentRetrievalTool(), FinancialCalculatorTool()],
             llm=self.llm_gpt4_mini,
-            verbose=True,
+            verbose=False,  # Reduced logging overhead for faster responses
             allow_delegation=False,  # Disable delegation to prevent unnecessary iterations
-            max_iter=1,  # Keep at 1 to prevent retries
-            max_rpm=5,   # Increase RPM to reduce waiting time
+            max_iter=2,  # Reduced from 5 to speed up responses
+            max_rpm=10,   # Increased RPM to reduce waiting time
             max_retry_limit=1  # Limit retries on failures
         )
     
