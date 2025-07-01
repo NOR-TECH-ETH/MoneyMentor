@@ -5,6 +5,7 @@ import {
   createSystemMessage,
   createUserMessage,
   createAssistantMessage,
+  convertCalculationResult,
 } from '../utils/chatWidget';
 
 export interface MessageHandlersProps {
@@ -24,9 +25,7 @@ export interface MessageHandlersProps {
 
 export const handleSendMessage = async (
   messageText: string,
-  props: MessageHandlersProps
-) => {
-  const {
+  {
     apiConfig,
     sessionIds,
     addMessage,
@@ -39,51 +38,37 @@ export const handleSendMessage = async (
     handleStartDiagnosticTestWrapper,
     handleCoursesListWrapper,
     setCurrentQuiz
-  } = props;
-
-  if (!messageText) return;
-
-  setIsLoading(true);
-  setInputValue('');
-  setShowCommandSuggestions(false);
-  setCommandSuggestions([]);
-  setShowCommandMenu(false);
-
+  }: MessageHandlersProps
+) => {
   try {
-    // Handle special commands
-    if (messageText === 'diagnostic_test') {
-      closeCurrentDisplays();
-      setIsLoading(false);
+    setInputValue('');
+    setShowCommandSuggestions(false);
+    setCommandSuggestions([]);
+    setShowCommandMenu(false);
+    setIsLoading(true);
+
+    // Handle diagnostic test command
+    if (messageText === '/diagnostic' || messageText === 'diagnostic') {
       await handleStartDiagnosticTestWrapper();
       return;
     }
 
-    if (messageText === 'courses') {
-      closeCurrentDisplays();
-      const coursesMessage = createSystemMessage(
-        '📚 **Available Courses**\n\nHere are all the courses available for you:',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
+    // Handle courses command
+    if (messageText === '/courses' || messageText === 'courses') {
       await handleCoursesListWrapper();
-      setIsLoading(false);
-      addMessage(coursesMessage);
       return;
     }
 
-    if (messageText === 'help') {
+    // Handle learn command
+    if (messageText === '/learn' || messageText === 'learn') {
       closeCurrentDisplays();
       setIsLoading(false);
-      const helpMessage = createSystemMessage(
-        '🤖 **MoneyMentor Commands**\n\n' +
-        '**diagnostic_test** - Take a quick financial knowledge assessment\n' +
-        '**courses** - View available learning courses\n' +
-        '**chat** - Start regular financial Q&A chat\n\n' +
-        '💡 **Tip**: You can also just ask me any financial question directly!',
+      const learnMessage = createSystemMessage(
+        '📚 **Learn Mode**\n\nChoose from these learning options:\n\n🎯 **Diagnostic Test** - Take a quick assessment to identify your knowledge gaps\n🎓 **Browse Courses** - Explore our comprehensive financial courses\n\nType `/diagnostic` to start the assessment or `/courses` to browse available courses.',
         sessionIds.sessionId,
         sessionIds.userId
       );
-      addMessage(helpMessage);
+      addMessage(learnMessage);
       return;
     }
 
@@ -111,11 +96,25 @@ export const handleSendMessage = async (
     
     // Handle backend response
     if (response.message) {
+      // Create assistant message
       const assistantMessage = createAssistantMessage(
         response.message,
         sessionIds.sessionId,
         sessionIds.userId
       );
+
+      // Check if this is a calculation response
+      if (response.is_calculation && response.calculation_result) {
+        // Convert snake_case to camelCase for calculation result
+        const calculationResult = convertCalculationResult(response.calculation_result);
+
+        // Add calculation result to message metadata
+        assistantMessage.metadata = {
+          ...assistantMessage.metadata,
+          calculationResult: calculationResult
+        };
+      }
+
       addMessage(assistantMessage);
       
       // Handle quiz if present

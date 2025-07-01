@@ -6,8 +6,8 @@ export interface ApiConfig {
   sessionId: string;
 }
 
-// Get environment variables
-const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
+// const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
+const BACKEND_URL = 'http://localhost:8000';
 const BACKEND_TWO_URL = 'https://backend-2-647308514289.us-central1.run.app';
 
 // Chat API calls - Using port 8000

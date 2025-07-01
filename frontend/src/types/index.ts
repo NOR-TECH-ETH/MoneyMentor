@@ -45,6 +45,20 @@ export interface ChatResponse {
   message: string;
   session_id: string;
   quiz: QuizQuestion | null;
+  is_calculation?: boolean;
+  calculation_result?: {
+    type?: string;
+    monthly_payment?: number;
+    months_to_payoff?: number;
+    total_interest: number;
+    total_amount: number;
+    step_by_step_plan?: string[];
+    disclaimer?: string;
+    metadata?: {
+      input_values?: Record<string, number>;
+      calculation_date?: string;
+    };
+  };
 }
 
 export interface DiagnosticTest {

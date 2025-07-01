@@ -1,4 +1,4 @@
-import { ChatMessage } from '../../types';
+import { ChatMessage, CalculationResult } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -170,4 +170,23 @@ export const formatMessageContent = (
     // Regular line
     return React.createElement('div', { key: index }, line || React.createElement('br'));
   });
+};
+
+/**
+ * Convert snake_case calculation result from API to camelCase for frontend
+ */
+export const convertCalculationResult = (apiResult: any): CalculationResult => {
+  return {
+    type: apiResult.type || 'financial_calculation',
+    monthlyPayment: apiResult.monthly_payment,
+    monthsToPayoff: apiResult.months_to_payoff,
+    totalInterest: apiResult.total_interest,
+    totalAmount: apiResult.total_amount,
+    stepByStepPlan: apiResult.step_by_step_plan || [],
+    disclaimer: apiResult.disclaimer || 'Estimates only. Verify with a certified financial professional.',
+    metadata: {
+      inputValues: apiResult.metadata?.input_values || {},
+      calculationDate: apiResult.metadata?.calculation_date || new Date().toISOString()
+    }
+  };
 }; 

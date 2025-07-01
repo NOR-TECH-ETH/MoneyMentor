@@ -575,11 +575,51 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       
       // Handle backend response
       if (response.message) {
+        // Check if message contains calculation JSON
+        const jsonMatch = response.message.match(/```json\n([\s\S]*?)\n```/);
+        let calculationResult = null;
+        let cleanMessage = response.message;
+        
+        if (jsonMatch) {
+          try {
+            const jsonData = JSON.parse(jsonMatch[1]);
+            // Convert snake_case to camelCase for the component
+            calculationResult = {
+              type: jsonData.type || 'financial_calculation',
+              monthlyPayment: jsonData.monthly_payment,
+              monthsToPayoff: jsonData.months_to_payoff,
+              totalInterest: jsonData.total_interest,
+              totalAmount: jsonData.total_amount,
+              stepByStepPlan: jsonData.step_by_step_plan || [],
+              disclaimer: "Estimates only. Verify with a certified financial professional.",
+              metadata: {
+                inputValues: {},
+                calculationDate: new Date().toISOString()
+              }
+            };
+            // Clean the message by removing the JSON block
+            cleanMessage = response.message.replace(/```json\n[\s\S]*?\n```/, '').trim();
+            // Remove the explanation paragraph that comes after the JSON
+            cleanMessage = cleanMessage.replace(/\n\nBased on the calculation results[\s\S]*$/, '').trim();
+          } catch (error) {
+            console.error('Error parsing calculation JSON:', error);
+          }
+        }
+
         const assistantMessage = createAssistantMessage(
-          response.message,
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
+          cleanMessage,
+          sessionIds.sessionId,
+          sessionIds.userId
+        );
+
+        // Add calculation result to metadata if present
+        if (calculationResult) {
+          assistantMessage.metadata = {
+            ...assistantMessage.metadata,
+            calculationResult: calculationResult
+          };
+        }
+
         setChatMessages(prev => [...prev, assistantMessage]);
         
         // Handle quiz if present
