@@ -2136,6 +2136,177 @@
   background: #3182ce;
 }
 
+/* Learning Topic Buttons */
+.learning-topic-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 20px 0;
+  padding: 0 4px;
+}
+
+.learning-topic-button {
+  position: relative;
+  padding: 20px 24px;
+  border: none;
+  border-radius: 16px;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  text-align: left;
+  min-height: 72px;
+}
+
+.learning-topic-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.learning-topic-button:hover::before {
+  opacity: 1;
+}
+
+.learning-topic-button:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+.learning-topic-button:active {
+  transform: translateY(-2px) scale(1.01);
+}
+
+.topic-icon {
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  flex-shrink: 0;
+}
+
+.topic-label {
+  flex: 1;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.topic-arrow {
+  font-size: 20px;
+  opacity: 0.8;
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+}
+
+.learning-topic-button:hover .topic-arrow {
+  transform: translateX(4px);
+  opacity: 1;
+}
+
+/* Dark theme support for learning topic buttons */
+.chat-widget.dark .learning-topic-button {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.chat-widget.dark .learning-topic-button:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* Animation for topic buttons */
+@keyframes topicButtonSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.learning-topic-button {
+  animation: topicButtonSlideIn 0.6s ease-out;
+}
+
+.learning-topic-button:nth-child(1) { animation-delay: 0.1s; }
+.learning-topic-button:nth-child(2) { animation-delay: 0.2s; }
+.learning-topic-button:nth-child(3) { animation-delay: 0.3s; }
+.learning-topic-button:nth-child(4) { animation-delay: 0.4s; }
+
+/* Mobile responsiveness for learning topic buttons */
+@media (max-width: 768px) {
+  .learning-topic-buttons {
+    gap: 12px;
+    margin: 16px 0;
+  }
+
+  .learning-topic-button {
+    padding: 16px 20px;
+    min-height: 64px;
+    border-radius: 12px;
+  }
+
+  .topic-icon {
+    font-size: 24px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .topic-label {
+    font-size: 16px;
+  }
+
+  .topic-arrow {
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .learning-topic-buttons {
+    gap: 10px;
+    margin: 12px 0;
+    padding: 0 2px;
+  }
+
+  .learning-topic-button {
+    padding: 14px 18px;
+    min-height: 56px;
+    border-radius: 10px;
+    gap: 12px;
+  }
+
+  .topic-icon {
+    font-size: 20px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .topic-label {
+    font-size: 15px;
+    font-weight: 500;
+  }
+}
+
 /* Disable input on intro window */
 .chat-widget.intro .chat-input-container {
   display: none;

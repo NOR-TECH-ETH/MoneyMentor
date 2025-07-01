@@ -1057,7 +1057,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                       )}
               {/* Display buttons if present */}
               {message.metadata?.buttons && (
-                <MessageButtons buttons={message.metadata.buttons} />
+                <MessageButtons buttons={message.metadata.buttons} messageId={message.id} />
               )}
               {/* Display calculation result if present */}
               {message.metadata?.calculationResult && (
@@ -1151,16 +1151,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   <div key={message.id} className={`message ${message.type}`}>
                     <div className="message-content">
                       {formatMessageContent(message.content)}
-                        {/* Render buttons if present in metadata */}
+                    </div>
+                    {/* Display buttons if present */}
                     {message.metadata?.buttons && (
-                          <div className="message-buttons">
-                            {message.metadata.buttons.map((btn, idx) => (
-                              <button key={idx} className="message-button" onClick={btn.action}>{btn.label}</button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      {/* Only render MessageButtons if not already rendered above */}
+                      <MessageButtons buttons={message.metadata.buttons} messageId={message.id} />
+                    )}
                     {/* Display calculation result if present */}
                     {message.metadata?.calculationResult && (
                       <CalculationResult result={message.metadata.calculationResult} />
