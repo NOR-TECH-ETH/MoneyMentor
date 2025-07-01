@@ -959,27 +959,34 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   return (
     <div className={`chat-app ${theme}`}>
-      {/* Sidebar */}
-      <Sidebar
-        sidebarState={sidebarHook.sidebarState}
-        setSidebarState={sidebarHook.setSidebarState}
-        chatSessions={chatSessions}
-        userProfile={profileHook.userProfile}
-        profileModalState={profileHook.profileModalState}
-        setProfileModalState={profileHook.setProfileModalState}
-        onSessionSelect={handleSessionSelect}
-        onNewChat={handleNewChat}
-        onProfileUpdate={profileHook.updateProfile}
-        theme={theme}
-      />
+      {/* Sidebar - only show in chat window */}
+      {currentWindow === 'chat' && (
+        <Sidebar
+          sidebarState={sidebarHook.sidebarState}
+          setSidebarState={sidebarHook.setSidebarState}
+          chatSessions={chatSessions}
+          userProfile={profileHook.userProfile}
+          profileModalState={profileHook.profileModalState}
+          setProfileModalState={profileHook.setProfileModalState}
+          onSessionSelect={handleSessionSelect}
+          onNewChat={handleNewChat}
+          onProfileUpdate={profileHook.updateProfile}
+          theme={theme}
+        />
+      )}
 
       <div className={`chat-widget ${theme} ${position}`}>
         <div className="chat-header">
           <div className="header-left">
-            <SidebarToggle 
-              isOpen={sidebarHook.sidebarState.isOpen}
-              onClick={sidebarHook.toggleSidebar}
-            />
+            {/* SidebarToggle - only show in chat window */}
+            {currentWindow === 'chat' ? (
+              <SidebarToggle 
+                isOpen={sidebarHook.sidebarState.isOpen}
+                onClick={sidebarHook.toggleSidebar}
+              />
+            ) : (
+              <div className="sidebar-toggle-placeholder" />
+            )}
             <h3>💰 MoneyMentor</h3>
           </div>
           <div className="mode-navigation-centered">

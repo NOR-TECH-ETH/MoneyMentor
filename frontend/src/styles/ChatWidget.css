@@ -100,7 +100,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 8px 20px;
+  min-height: 33px; /* Consistent header height across all windows */
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -110,6 +111,13 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 33px; /* Ensure consistent height even without sidebar toggle */
+}
+
+.sidebar-toggle-placeholder {
+  width: 32px; /* Same width as sidebar toggle button */
+  height: 32px; /* Same height as sidebar toggle button */
+  visibility: hidden; /* Invisible but takes up space */
 }
 
 .header-right {
@@ -153,6 +161,8 @@
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+  line-height: 1.2; /* Consistent line height for logo */
+  white-space: nowrap; /* Prevent text wrapping */
 }
 
 .chat-header-buttons {
