@@ -1,6 +1,6 @@
 import React from 'react';
 import { UserProfile } from '../../types';
-import { getUserInitials, formatSubscriptionType } from '../../utils/profile';
+import { getUserInitials } from '../../utils/profile';
 
 interface ProfileButtonProps {
   userProfile: UserProfile;
@@ -14,7 +14,6 @@ export const ProfileButton: React.FC<ProfileButtonProps> = ({
   onClick
 }) => {
   const initials = getUserInitials(userProfile.name);
-  const subscriptionText = formatSubscriptionType(userProfile.subscription);
 
   return (
     <div className="sidebar-profile">
@@ -30,9 +29,6 @@ export const ProfileButton: React.FC<ProfileButtonProps> = ({
         {!isCollapsed && (
           <div className="profile-info">
             <div className="profile-name">{userProfile.name}</div>
-            <div className={`profile-subscription ${userProfile.subscription}`}>
-              {subscriptionText}
-            </div>
           </div>
         )}
       </button>

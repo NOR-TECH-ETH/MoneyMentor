@@ -12,8 +12,8 @@ interface SidebarProps {
   setSidebarState: (state: SidebarState) => void;
   chatSessions: ChatSession[];
   userProfile: UserProfile;
-  profileModalState: { isOpen: boolean; activeTab: 'profile' | 'settings' | 'subscription' };
-  setProfileModalState: (state: { isOpen: boolean; activeTab: 'profile' | 'settings' | 'subscription' }) => void;
+  profileModalState: { isOpen: boolean; activeTab: 'profile' | 'settings' };
+  setProfileModalState: (state: { isOpen: boolean; activeTab: 'profile' | 'settings' }) => void;
   onSessionSelect: (sessionId: string) => void;
   onNewChat: () => void;
   onProfileUpdate: (profile: Partial<UserProfile>) => void;

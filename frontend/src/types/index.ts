@@ -164,7 +164,7 @@ export interface ChatSession {
 // Profile Modal types
 export interface ProfileModalState {
   isOpen: boolean;
-  activeTab: 'profile' | 'settings' | 'subscription';
+  activeTab: 'profile' | 'settings';
 }
 
 // Sidebar handlers props

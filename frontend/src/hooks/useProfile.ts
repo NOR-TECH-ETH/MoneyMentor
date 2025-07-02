@@ -10,7 +10,7 @@ export const useProfile = () => {
 
   const [userProfile, setUserProfile] = useState<UserProfile>(getDefaultUserProfile());
 
-  const openProfileModal = useCallback((tab: 'profile' | 'settings' | 'subscription' = 'profile') => {
+  const openProfileModal = useCallback((tab: 'profile' | 'settings' = 'profile') => {
     setProfileModalState({
       isOpen: true,
       activeTab: tab,
@@ -24,7 +24,7 @@ export const useProfile = () => {
     }));
   }, []);
 
-  const switchTab = useCallback((tab: 'profile' | 'settings' | 'subscription') => {
+  const switchTab = useCallback((tab: 'profile' | 'settings') => {
     setProfileModalState(prev => ({
       ...prev,
       activeTab: tab,
@@ -48,25 +48,7 @@ export const useProfile = () => {
     }));
   }, []);
 
-  const toggleNotifications = useCallback(() => {
-    setUserProfile(prev => ({
-      ...prev,
-      preferences: {
-        ...prev.preferences,
-        notifications: !prev.preferences.notifications,
-      },
-    }));
-  }, []);
 
-  const toggleAutoSave = useCallback(() => {
-    setUserProfile(prev => ({
-      ...prev,
-      preferences: {
-        ...prev.preferences,
-        autoSave: !prev.preferences.autoSave,
-      },
-    }));
-  }, []);
 
   return {
     profileModalState,
@@ -78,7 +60,5 @@ export const useProfile = () => {
     switchTab,
     updateProfile,
     toggleTheme,
-    toggleNotifications,
-    toggleAutoSave,
   };
 }; 
