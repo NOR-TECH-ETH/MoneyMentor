@@ -372,6 +372,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const sidebarHook = useSidebar();
   const profileHook = useProfile();
   
+  // Get current theme from user profile (overrides static theme prop)
+  const currentTheme = profileHook.userProfile.preferences.theme;
+  
   // Chat Sessions State
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(getMockChatSessions());
   
@@ -958,7 +961,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   }, [learnWindow]);
 
   return (
-    <div className={`chat-app ${theme}`}>
+    <div className={`chat-app ${currentTheme}`}>
       {/* Sidebar - only show in chat window */}
       {currentWindow === 'chat' && (
         <Sidebar
@@ -971,11 +974,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           onSessionSelect={handleSessionSelect}
           onNewChat={handleNewChat}
           onProfileUpdate={profileHook.updateProfile}
-          theme={theme}
+          theme={currentTheme}
         />
       )}
 
-      <div className={`chat-widget ${theme} ${position}`}>
+      <div className={`chat-widget ${currentTheme} ${position}`}>
         <div className="chat-header">
           <div className="header-left">
             {/* SidebarToggle - only show in chat window */}

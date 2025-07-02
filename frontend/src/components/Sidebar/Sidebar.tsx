@@ -102,20 +102,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="sidebar-logo-text">MoneyMentor</span>
             </a>
             <div className="sidebar-controls">
-              <button 
+              {/* <button 
                 className="sidebar-btn"
                 onClick={handleCollapse}
                 title={sidebarState.isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
                 {sidebarState.isCollapsed ? '→' : '←'}
-              </button>
-              <button 
-                className="sidebar-btn"
-                onClick={handleClose}
-                title="Close sidebar"
-              >
-                ✕
-              </button>
+              </button> */}
+              
             </div>
           </div>
         </div>

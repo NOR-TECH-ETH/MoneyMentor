@@ -331,6 +331,11 @@
   backdrop-filter: blur(10px);
 }
 
+.sidebar.dark .sidebar-profile {
+  background: rgba(31, 41, 55, 0.8);
+  border-top-color: rgba(75, 85, 99, 0.6);
+}
+
 .profile-button {
   width: 100%;
   display: flex;
