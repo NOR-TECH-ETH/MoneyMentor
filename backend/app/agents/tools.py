@@ -111,6 +111,9 @@ class FinancialCalculatorTool(BaseTool):
     
     async def _run(self, calculation_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
         try:
+            # Debug logging
+            logger.info(f"FinancialCalculatorTool: Received calculation_type={calculation_type}, params={params}")
+            
             # Validate calculation type
             valid_types = ["credit_card_payoff", "savings_goal", "student_loan"]
             if calculation_type not in valid_types:
@@ -142,23 +145,17 @@ class FinancialCalculatorTool(BaseTool):
                     "details": "Result must include monthly_payment, months_to_payoff, total_interest, step_by_step_plan"
                 }
             
-            # Format the response according to Step 3 requirements
-            formatted_response = f"""Here is your calculation result:
-```json
-{json.dumps(result, indent=2)}
-```
-
-Based on the calculation results, your 'monthly_payment' would be ${result.get('monthly_payment', 'N/A')}. The 'months_to_payoff' shows it will take {result.get('months_to_payoff', 'N/A')} months to clear the debt or reach your goal. The 'total_interest' you'll pay or earn is ${result.get('total_interest', 'N/A')}. Following the 'step_by_step_plan' will help you stay on track.
-
-Estimates only. Verify with a certified financial professional."""
-            
+            # Return only the raw calculation result for LLM processing
             return {
                 "success": True,
                 "result": result,
                 "calculation_type": calculation_type,
                 "params_used": params,
-                "_step3_marker": "CALCULATION_RESULT_READY_FOR_FORMATTING",
-                "_formatted_response": formatted_response
+                "monthly_payment": result.get('monthly_payment'),
+                "months_to_payoff": result.get('months_to_payoff'),
+                "total_interest": result.get('total_interest'),
+                "step_by_step_plan": result.get('step_by_step_plan'),
+                "total_amount": result.get('total_amount')
             }
             
         except Exception as e:

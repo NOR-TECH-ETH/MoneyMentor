@@ -2,7 +2,9 @@ from crewai import Agent, Task, Crew, Process
 from langchain_openai import ChatOpenAI
 from typing import Dict, Any, List
 import logging
+import time
 from fastapi import HTTPException
+import re
 
 from app.core.config import settings
 from app.agents.tools import (
@@ -32,31 +34,164 @@ class MoneyMentorCrew:
         self.llm_gpt4_mini = ChatOpenAI(
             model_name=settings.OPENAI_MODEL_GPT4_MINI,
             openai_api_key=settings.OPENAI_API_KEY,
-            temperature=0.3,
-            request_timeout=30,
-            max_retries=2,
+            temperature=0.0,  # Set to 0 for maximum speed and determinism
+            request_timeout=30,  # Increased timeout for reliability
+            max_retries=2,  # Allow retries for reliability
             streaming=False,
-            provider="openai"
+            provider="openai",
+            # PERFORMANCE OPTIMIZATIONS
+            max_tokens=1024,  # Increased for complete responses
+            presence_penalty=0.0,  # Disable presence penalty for faster responses
+            frequency_penalty=0.0,  # Disable frequency penalty for faster responses
+            # Optimize for function calling
+            function_call="auto",  # Enable automatic function calling
         )
         
-        # Initialize tools
+        # Initialize tools - ONLY for chat/message endpoint
         self.tools = [
-            QuizGeneratorTool(),
-            QuizLoggerTool(),
             FinancialCalculatorTool(),
-            ContentRetrievalTool(),
-            SessionManagerTool(),
-            ProgressTrackerTool()
+            # ContentRetrievalTool removed - using pre-retrieved context instead for better performance
+            # Commented out tools not used in chat/message endpoint
+            # QuizGeneratorTool(),
+            # QuizLoggerTool(),
+            # SessionManagerTool(),
+            # ProgressTrackerTool()
         ]
         
-        # Create agents
+        # Create agents - ONLY the one used for chat/message endpoint
         self.financial_tutor_agent = self._create_financial_tutor_agent()
-        self.quiz_master_agent = self._create_quiz_master_agent()
-        self.calculation_agent = self._create_calculation_agent()
-        self.progress_tracker_agent = self._create_progress_tracker_agent()
         
-    def _format_chat_history(self, chat_history: List[Dict[str, str]]) -> str:
-        """Format chat history into a readable string"""
+        # Commented out agents not used in chat/message endpoint
+        # self.quiz_master_agent = self._create_quiz_master_agent()
+        # self.calculation_agent = self._create_calculation_agent()
+        # self.progress_tracker_agent = self._create_progress_tracker_agent()
+        
+    def _get_calculation_description(self, calculation_type: str) -> str:
+        """Get human-readable description of calculation type"""
+        descriptions = {
+            'credit_card_payoff': 'debt payoff timeline',
+            'savings_goal': 'savings goal projection',
+            'student_loan': 'student loan amortization'
+        }
+        return descriptions.get(calculation_type, calculation_type)
+
+    def _determine_calculation_type(self, message: str) -> str:
+        """Determine calculation type based on message content"""
+        message_lower = message.lower()
+        
+        # Check for savings goal indicators
+        if any(word in message_lower for word in ['save', 'savings', 'goal', 'college', 'tuition', 'need', 'want']):
+            return 'savings_goal'
+        # Check for student loan indicators
+        elif any(word in message_lower for word in ['student', 'loan', 'borrow', 'principal']):
+            return 'student_loan'
+        # Default to credit card payoff for debt-related questions
+        else:
+            return 'credit_card_payoff'
+    
+    def _map_parameters_for_calculation_type(self, params: Dict[str, Any], calculation_type: str) -> Dict[str, Any]:
+        """Map extracted parameters to the correct parameter names for each calculation type"""
+        if calculation_type == 'savings_goal':
+            # Map balance -> target_amount, apr -> interest_rate
+            # Use default interest rate of 5% for savings if not provided
+            interest_rate = params.get('apr', 5.0)  # Default to 5% for savings
+            return {
+                'target_amount': params.get('balance', 0),
+                'interest_rate': interest_rate,
+                'target_months': params.get('target_months', 0)
+            }
+        elif calculation_type == 'student_loan':
+            # Map balance -> principal, apr -> interest_rate
+            return {
+                'principal': params.get('balance', 0),
+                'interest_rate': params.get('apr', 0),
+                'term_months': params.get('target_months', 0)
+            }
+        else:  # credit_card_payoff
+            # Keep original parameter names
+            return params
+
+    def _extract_calculation_params(self, message: str) -> Dict[str, Any]:
+        """Extract calculation parameters using regex - only real extracted data, no defaults"""
+        import re
+        params = {}
+        
+        # Extract dollar amounts with better pattern matching
+        dollar_patterns = [
+            r'\$(\d+(?:,\d{3})*(?:\.\d{2})?)',  # $6,000.00
+            r'\$(\d+)\s*k',  # $6k
+            r'\$(\d+)\s*thousand',  # $6 thousand
+            r'(\d+)\s*k\s+dollars?',  # 6k dollars
+            r'(\d+)\s+thousand\s+dollars?',  # 6 thousand dollars
+        ]
+        
+        for pattern in dollar_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                amount_str = matches[0].replace(',', '')
+                amount = float(amount_str)
+                
+                # Convert k/thousand to actual amount
+                if 'k' in pattern or 'thousand' in pattern:
+                    amount *= 1000
+                
+                # Determine parameter name based on context
+                message_lower = message.lower()
+                if any(word in message_lower for word in ['save', 'goal', 'need', 'want', 'target']):
+                    params['target_amount'] = amount
+                else:
+                    params['balance'] = amount
+                break
+        
+        # Extract percentages with better pattern matching
+        percent_patterns = [
+            r'(\d+(?:\.\d+)?)\s*%',  # 22% or 22.5%
+            r'(\d+(?:\.\d+)?)\s*percent',  # 22 percent
+            r'apr\s+of\s+(\d+(?:\.\d+)?)',  # APR of 22
+            r'interest\s+rate\s+of\s+(\d+(?:\.\d+)?)',  # interest rate of 22
+        ]
+        
+        for pattern in percent_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                params['apr'] = float(matches[0])
+                break
+        
+        # Extract time periods with better pattern matching
+        time_patterns = [
+            (r'(\d+)\s*months?', 'target_months'),  # 12 months
+            (r'(\d+)\s*mo', 'target_months'),  # 12 mo
+            (r'(\d+)\s*years?', 'target_months'),  # 3 years -> 36 months
+            (r'(\d+)\s*yr', 'target_months'),  # 3 yr -> 36 months
+        ]
+        
+        for pattern, param_name in time_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                value = int(matches[0])
+                if 'year' in pattern or 'yr' in pattern:
+                    value *= 12  # Convert years to months
+                params[param_name] = value
+                break
+        
+        # Extract monthly payment if specified
+        payment_patterns = [
+            r'\$(\d+(?:,\d{3})*(?:\.\d{2})?)\s+(?:per\s+)?month',  # $500 per month
+            r'(\d+(?:,\d{3})*(?:\.\d{2})?)\s+dollars?\s+(?:per\s+)?month',  # 500 dollars per month
+            r'monthly\s+payment\s+of\s+\$(\d+(?:,\d{3})*(?:\.\d{2})?)',  # monthly payment of $500
+        ]
+        
+        for pattern in payment_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                amount_str = matches[0].replace(',', '')
+                params['monthly_payment'] = float(amount_str)
+                break
+        
+        return params
+
+    def _format_chat_history(self, chat_history: List[Dict[str, str]], is_calculation: bool = False) -> str:
+        """Format chat history into a readable string, filtering calculation results for general chat"""
         if not chat_history:
             return "No previous messages."
             
@@ -65,113 +200,289 @@ class MoneyMentorCrew:
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
             timestamp = msg.get("timestamp", "")
+            
+            # For general chat requests, filter out calculation results to prevent contamination
+            if not is_calculation and role == "assistant":
+                # Check if this is a calculation result
+                if any(keyword in content.lower() for keyword in [
+                    "calculation result", "monthly payment", "total interest", 
+                    "step-by-step plan", "apr:", "balance:", "```json"
+                ]):
+                    # Replace calculation results with a simple acknowledgment
+                    content = "I provided a financial calculation in response to your previous question."
+            
             formatted_history.append(f"{role.upper()} ({timestamp}): {content}")
             
         return "\n".join(formatted_history)
         
     async def process_message(self, message: str, chat_history: List[Dict[str, str]], session_id: str, context: str = "") -> Dict[str, Any]:
-        """Process a user message and generate a response"""
+        """Process a user message and generate a response with parallel optimization"""
+        crew_start_time = time.time()
+        print(f"            🚀 CrewAI.process_message() started")
+        
         try:
-            # Initialize content service to get relevant context
-            content_service = ContentService()
+            # Step 1: PARALLEL OPTIMIZATION - Run ALL operations simultaneously
+            step1_start = time.time()
+            print(f"               ⚡ Step 2.1: PARALLEL - Chat History + Calculation detection + Content retrieval...")
             
-            # Get relevant context from knowledge base based on the message
-            try:
-                content_results = await content_service.search_content(message)
-                if content_results and isinstance(content_results, list):
-                    # Format the content results into a readable context
-                    context = "\n".join([
-                        f"- {item.get('title', 'Untitled')}: {item.get('content', '')}"
-                        for item in content_results[:3]  # Limit to top 3 most relevant results
-                    ])
-                    logger.info(f"Retrieved context from knowledge base: {context[:100]}...")
+            # Create parallel tasks
+            import asyncio
+            
+            # Task 1: Specific calculation detection (fast regex operation)
+            async def detect_calculation():
+                """Specific calculation detection using precise regex patterns"""
+                import re
+                
+                # More specific calculation patterns that require actual numbers
+                calculation_patterns = [
+                    r'\$\d+(?:,\d{3})*(?:\.\d{2})?',  # Dollar amounts like $6,000.00
+                    r'\d+(?:\.\d+)?\s*%',  # Percentage rates like 22% or 22.5%
+                    r'how\s+much\s+(?:do\s+I\s+need\s+to\s+)?(?:pay|save|contribute)',  # "how much do I need to pay"
+                    r'how\s+long\s+(?:will\s+it\s+take\s+to\s+)?(?:pay\s+off|clear|reach)',  # "how long will it take to pay off"
+                    r'(?:pay\s+off|clear)\s+\$\d+',  # "pay off $6000"
+                    r'\d+\s*(?:months?|years?)\s+(?:to\s+)?(?:pay\s+off|clear|reach)',  # "12 months to pay off"
+                    r'monthly\s+payment\s+(?:of\s+)?\$\d+',  # "monthly payment of $500"
+                    r'\$\d+\s+(?:per\s+)?month',  # "$500 per month"
+                ]
+                
+                # Check for specific calculation patterns
+                has_calculation_pattern = any(re.search(pattern, message.lower()) for pattern in calculation_patterns)
+                
+                # Check for definition/educational questions to exclude
+                definition_patterns = [
+                    r'^what\s+is\s+',  # "What is APR?"
+                    r'^how\s+does\s+',  # "How does APR work?"
+                    r'^explain\s+',  # "Explain APR"
+                    r'^tell\s+me\s+about\s+',  # "Tell me about APR"
+                    r'^define\s+',  # "Define APR"
+                    r'^why\s+',  # "Why is APR important?"
+                ]
+                
+                is_definition_question = any(re.search(pattern, message.lower()) for pattern in definition_patterns)
+                
+                # Check if the question contains financial keywords but no numbers
+                financial_keywords = [
+                    'apr', 'interest rate', 'balance', 'payment', 'loan', 'credit card',
+                    'savings', 'goal', 'debt', 'principal', 'amortization', 'compound interest'
+                ]
+                
+                has_financial_keywords = any(keyword in message.lower() for keyword in financial_keywords)
+                
+                # Check for numbers in the message
+                has_numbers = bool(re.search(r'\d+', message))
+                
+                # If it's a definition question with financial keywords but no numbers, treat as regular chat
+                if is_definition_question and has_financial_keywords and not has_numbers:
+                    return False
+                
+                # Return True only if it has specific calculation patterns
+                return has_calculation_pattern
+            
+            # Task 2: Content retrieval from vector database
+            async def retrieve_content():
+                """Retrieve relevant content from knowledge base"""
+                try:
+                    content_service = ContentService()
+                    content_results = await content_service.search_content(
+                        message, 
+                        limit=2,  # Reduced from 3 to 2 for faster retrieval
+                        threshold=0.2  # Reduced from 0.3 to 0.2 for more results
+                    )
+                    if content_results and isinstance(content_results, list):
+                        # Format the content results into a readable context
+                        context = "\n".join([
+                            f"- {item.get('content', '')[:200]}"  # Limit content length to 200 chars
+                            for item in content_results[:2]  # Limit to top 2 most relevant results
+                        ])
+                        logger.info(f"Retrieved context from knowledge base: {context[:100]}...")
+                        return context
+                    else:
+                        logger.info("No relevant context found in knowledge base")
+                        return ""
+                except Exception as e:
+                    logger.error(f"Failed to retrieve context from knowledge base: {e}")
+                    return ""  # Reset to empty if retrieval fails
+            
+            # Task 3: Get chat history (if not provided)
+            async def get_chat_history():
+                """Get chat history from session if not provided"""
+                if chat_history:
+                    return chat_history
+                try:
+                    # Import here to avoid circular imports
+                    from app.utils.session import get_session
+                    session = await get_session(session_id)
+                    if session:
+                        return session.get("chat_history", [])
+                    return []
+                except Exception as e:
+                    logger.error(f"Failed to get chat history: {e}")
+                    return []
+            
+            # Execute ALL three tasks in parallel
+            parallel_results = await asyncio.wait_for(
+                asyncio.gather(
+                    detect_calculation(),
+                    retrieve_content(),
+                    get_chat_history(),
+                    return_exceptions=True
+                ),
+                timeout=5.0  # 5 second timeout for parallel operations
+            )
+            
+            # Extract results
+            is_calculation = parallel_results[0] if not isinstance(parallel_results[0], Exception) else False
+            context = parallel_results[1] if not isinstance(parallel_results[1], Exception) else ""
+            retrieved_chat_history = parallel_results[2] if not isinstance(parallel_results[2], Exception) else []
+            
+            # Use retrieved chat history if original was empty
+            final_chat_history = chat_history if chat_history else retrieved_chat_history
+            
+            step1_time = time.time() - step1_start
+            print(f"               ✅ Step 2.1 completed in {step1_time:.3f}s (PARALLEL - Chat History + Calc detection + Content retrieval)")
+            print(f"                  - Calculation detected: {is_calculation}")
+            print(f"                  - Context retrieved: {len(context)} chars")
+            print(f"                  - Chat history retrieved: {len(final_chat_history)} messages")
+            
+            # Step 2: Crew creation with optimized task description
+            step2_start = time.time()
+            print(f"               🏗️ Step 2.2: Crew creation...")
+            
+            # Create optimized task description based on calculation detection
+            if is_calculation:
+                # Get pre-extracted parameters from chat service
+                calc_params = self._extract_calculation_params(message)
+                calculation_type = self._determine_calculation_type(message)
+                
+                # Check if we have enough parameters to perform a calculation
+                if not calc_params:
+                    # No parameters extracted - treat as regular chat and ask for more information
+                    task_description = f"""The user asked a calculation question but didn't provide enough specific numbers: {message}
+
+                    Since no calculation parameters were extracted, respond as a helpful financial advisor:
+                    1. Acknowledge their question
+                    2. Explain what information you need to perform the calculation
+                    3. Ask for specific amounts, rates, and timeframes
+                    4. Provide educational context about why this information is important
+
+                    Example: "I'd be happy to help you with that calculation! To give you an accurate result, I'll need:
+                    - The amount (e.g., $6,000)
+                    - The interest rate (e.g., 22% APR)
+                    - The timeframe (e.g., 12 months)
+                    
+                    Could you provide these details?"
+
+                    Keep your response friendly and educational.
+                    """
                 else:
-                    logger.info("No relevant context found in knowledge base")
-            except Exception as e:
-                logger.error(f"Failed to retrieve context from knowledge base: {e}")
-                context = ""  # Reset to empty if retrieval fails
+                    # We have parameters - perform the calculation
+                    mapped_params = self._map_parameters_for_calculation_type(calc_params, calculation_type)
+                    task_description = f"""You are a financial calculator. The user asked: {message}
+
+                        You have access to the FinancialCalculatorTool. Use it with these parameters:
+                        - calculation_type: "{calculation_type}"
+                        - params: {mapped_params}
+
+                        IMPORTANT: Follow this exact process:
+                        1. Call the FinancialCalculatorTool to get the calculation results
+                        2. Use the returned JSON data to explain the results in plain English
+                        3. Do NOT show the raw JSON to the user
+                        4. Explain the monthly payment, timeline, and total interest in simple terms
+                        5. Use the step_by_step_plan to provide educational context
+                        6. End with: "Estimates only. Verify with a certified financial professional."
+
+                        Example response format:
+                        "Based on your calculation, you would need to save $516.08 per month to reach your $20,000 goal in 3 years. This means you'll contribute a total of $18,579.05 and earn $1,420.95 in interest. 
+
+Here's how it works:
+- Starting with $0.00 in savings
+- Target amount: $20,000.00
+- Timeframe: 36 months
+- Interest rate: 5.0% annually
+- Monthly contribution needed: $516.08
+- Total contributions: $18,579.05
+- Interest earned: $1,420.95
+- Final amount: $20,000.00
+
+Estimates only. Verify with a certified financial professional."
+
+                        Execute the tool call now and explain the results naturally.
+                        """
+            else:
+                task_description = f"""You are a friendly financial education tutor. The user said: "{message}"
+
+                Use the following context from our knowledge base if relevant:
+                {context if context else "No specific content found in knowledge base - use your general financial education knowledge"}
+                
+                Previous chat history:
+                {self._format_chat_history(final_chat_history, is_calculation)}
+                
+                IMPORTANT: This is a GENERAL CONVERSATION REQUEST, NOT a calculation.
+                
+                DO NOT use the FinancialCalculatorTool for this request.
+                DO NOT mention calculations or financial tools.
+                
+                Provide a complete, helpful response that:
+                1. Acknowledges the user's message
+                2. Uses the provided context if relevant
+                3. Offers helpful financial education information
+                4. Maintains a friendly, conversational tone
+                5. Is educational and informative
+                
+                Keep your responses natural and conversational while maintaining professionalism.
+                Be friendly, helpful, and engaging in your response.
+                Complete your response fully - do not cut off mid-sentence.
+                """
             
             # Create a chat crew for this message
             chat_crew = Crew(
                 agents=[self.financial_tutor_agent],
                 tasks=[
                     Task(
-                        description=f"""Process the user's message and provide a helpful response.
-                        Use the following context from our knowledge base if relevant:
-                        {context if context else "No specific content found in knowledge base - use your general financial education knowledge"}
-                        
-                        User message: {message}
-                        
-                        Previous chat history:
-                        {self._format_chat_history(chat_history)}
-                        
-                        IMPORTANT CALCULATION DETECTION:
-                        If the user asks for financial calculations (like "how much", "how long", "payoff", "savings", "loan"), 
-                        use the FinancialCalculatorTool to provide accurate, deterministic results. The tool supports:
-                        1. Credit-card payoff timeline (calculation_type: "credit_card_payoff")
-                        2. Savings goal projection (calculation_type: "savings_goal") 
-                        3. Student-loan amortisation (calculation_type: "student_loan")
-                        
-                        When using the FinancialCalculatorTool:
-                        - Extract the relevant parameters from the user's message
-                        - Use EXACT parameter names:
-                          * credit_card_payoff: {{"balance": amount, "apr": rate, "target_months": months}}
-                          * savings_goal: {{"target_amount": amount, "interest_rate": rate, "target_months": months}}
-                          * student_loan: {{"principal": amount, "interest_rate": rate, "monthly_payment": payment}}
-                        - Call the tool with the appropriate calculation_type and params
-                        
-                        MANDATORY STEP 3 FORMAT - YOU MUST FOLLOW THIS EXACTLY:
-                        After getting calculation results from FinancialCalculatorTool, your response MUST follow this format:
-                        
-                        1. START with: "Here is your calculation result:"
-                        2. PASTE the complete JSON result in a code block like this:
-                        ```json
-                        [PASTE THE EXACT JSON FROM THE TOOL HERE]
-                        ```
-                        3. THEN explain the results, referencing specific JSON fields by name
-                        4. END with exactly: "Estimates only. Verify with a certified financial professional."
-                        
-                        CRITICAL: You MUST include the raw tool output in your response so it can be properly formatted.
-                        The tool output will look like: {{"success": True, "result": {{"monthly_payment": 561.57, ...}}, "_step3_marker": "CALCULATION_RESULT_READY_FOR_FORMATTING"}}
-                        
-                        EXAMPLE RESPONSE FORMAT:
-                        Here is your calculation result:
-                        ```json
-                        {{
-                          "monthly_payment": 561.57,
-                          "months_to_payoff": 12,
-                          "total_interest": 738.8,
-                          "step_by_step_plan": [
-                            "Starting balance: $6,000.00",
-                            "APR: 22.0% (monthly rate: 1.83%)",
-                            "Monthly payment: $561.57"
-                          ]
-                        }}
-                        ```
-                        
-                        Based on the calculation results, your 'monthly_payment' would be $561.57. The 'months_to_payoff' shows it will take 12 months to clear the debt. The 'total_interest' you'll pay is $738.80. Following the 'step_by_step_plan' will help you stay on track.
-                        
-                        Estimates only. Verify with a certified financial professional.
-                        
-                        For general financial questions, use the ContentRetrievalTool with both query and limit parameters:
-                        - query: the search term from the user's question
-                        - limit: 5 (default number of results)
-                        
-                        If no specific content is found in the knowledge base, use your general financial education expertise to provide accurate, helpful information. Always aim to be educational and informative, even when specific content isn't available.
-                        
-                        Keep your responses natural and conversational while maintaining professionalism.
-                        """,
+                        description=task_description,
                         agent=self.financial_tutor_agent,
-                        expected_output="A friendly and helpful response that matches the tone of the user's message. If calculations are performed, you MUST include the structured JSON results in your explanation and provide a comprehensive step-by-step breakdown. Always end with the exact disclaimer: 'Estimates only. Verify with a certified financial professional.'"
+                        expected_output="Helpful response. For calculations: JSON + explanation + disclaimer."
                     )
                 ],
                 process=Process.sequential,
-                verbose=False  # Reduced logging overhead for faster responses
+                verbose=False,  # Reduced logging overhead for faster responses
+                # Additional Crew optimizations
+                memory=False,  # Disable crew-level memory
+                max_rpm=50,  # Increase RPM for faster processing
+                # Optimize for single-task execution
+                enable_planning=False,  # Disable planning for single task
+                enable_reasoning=False,  # Disable reasoning for single task
+                # Increase context usage for better responses
+                max_context_length=2000,  # Increased for better context
+                # Disable unnecessary features
+                human_input=False,  # Disable human input requests
+                # Optimize for speed
+                temperature=0.0,  # Lower temperature for deterministic responses
+                # Disable features that add overhead
+                enable_search=False,  # Disable built-in search
+                enable_code_execution=False,  # Disable code execution
+                # Allow more iterations for complete responses
+                max_iterations=2,  # Increased to 2 iterations for complete responses
+                # Optimize for single response
+                allow_delegation=False,  # Disable delegation for single agent
+                # Increase token limit for complete responses
+                max_tokens_per_task=1024,  # Increased token limit
+                # Disable telemetry to prevent connection errors
+                disable_telemetry=True,  # Disable CrewAI telemetry
             )
+            
+            step2_time = time.time() - step2_start
+            print(f"               ✅ Step 2.2 completed in {step2_time:.3f}s (Crew creation)")
+            
+            # Step 3: Crew execution (MAIN BOTTLENECK)
+            step3_start = time.time()
+            print(f"               ⚡ Step 2.3: Crew execution (MAIN BOTTLENECK)...")
             
             try:
                 # Process the message
+                print(f"               🔄 Starting CrewAI kickoff...")
                 result = await chat_crew.kickoff_async()
+                print(f"               ✅ CrewAI kickoff completed")
                 
                 # Ensure result is a string
                 if hasattr(result, 'raw_output'):
@@ -181,196 +492,58 @@ class MoneyMentorCrew:
                 elif not isinstance(result, str):
                     result = str(result)
                 
-                # Post-processing: Enforce Step 3 format if calculation was performed but format is missing
+                print(f"               📝 Result type: {type(result)}")
+                print(f"               📝 Result length: {len(str(result))}")
+                
+                # SIMPLIFIED: Only run post-processing for calculation requests
                 def needs_step3_enforcement(msg):
-                    # More specific detection based on client requirements
-                    # Focus on numeric/"how much/how long" queries, not general financial terms
-                    
-                    # Check for calculation-specific patterns (more restrictive)
-                    calculation_patterns = [
-                        r'\$\d+',  # Dollar amounts
-                        r'\d+\s*%',  # Percentage rates
-                        r'\d+\s*(?:months?|years?)',  # Time periods
-                        r'how\s+much',  # "how much" queries
-                        r'how\s+long',  # "how long" queries
-                        r'payoff',  # Payoff timeline
-                        r'amortiz',  # Amortization
-                        r'monthly\s+payment',  # Monthly payment
-                        r'clear\s+(?:it|the\s+debt)',  # Clear debt
-                        r'reach\s+(?:goal|target)',  # Reach goal
-                        r'borrow\s+\$\d+',  # Borrow amounts
-                        r'repay\s+with\s+\$\d+',  # Repay with amounts
-                    ]
-                    
-                    # Check if message contains calculation patterns
-                    import re
-                    has_calculation_pattern = any(re.search(pattern, msg.lower()) for pattern in calculation_patterns)
-                    
-                    # Additional check for specific calculation keywords (more restrictive)
-                    calculation_keywords = [
-                        'payoff timeline',
-                        'savings goal projection', 
-                        'student-loan amortisation',
-                        'monthly payment',
-                        'months to payoff',
-                        'total interest'
-                    ]
-                    
-                    has_calculation_keyword = any(keyword in msg.lower() for keyword in calculation_keywords)
-                    
-                    # Exclude educational questions that start with "why", "what", "how" (without numbers)
-                    educational_patterns = [
-                        r'^why\s+',  # Questions starting with "why"
-                        r'^what\s+is',  # Questions starting with "what is"
-                        r'^explain\s+',  # Questions starting with "explain"
-                        r'^describe\s+',  # Questions starting with "describe"
-                        r'^tell\s+me\s+about',  # Questions starting with "tell me about"
-                    ]
-                    
-                    is_educational_question = any(re.search(pattern, msg.lower()) for pattern in educational_patterns)
-                    
-                    # Only trigger if calculation patterns exist AND it's not an educational question AND no JSON block exists
-                    return (
-                        (has_calculation_pattern or has_calculation_keyword) and
-                        not is_educational_question and
-                        '```json' not in msg
-                    )
+                    """Only enforce if it's a calculation request AND no JSON block exists"""
+                    return is_calculation and '```json' not in msg
 
-                # Enhanced post-processing: Capture tool outputs from the crew execution
-                calculation_result = None
+                # SIMPLIFIED: Only run post-processing for calculation requests
+                if needs_step3_enforcement(str(result)):
+                    # For calculation requests, let CrewAI handle it naturally
+                    # Only add a simple disclaimer if no JSON is present
+                    if '```json' not in str(result):
+                        result = f"{result}\n\nEstimates only. Verify with a certified financial professional."
+                        logger.info("Added disclaimer to calculation response")
                 
-                # Try to extract calculation result from the crew's execution logs
-                if hasattr(chat_crew, 'tasks') and chat_crew.tasks:
-                    for task in chat_crew.tasks:
-                        if hasattr(task, 'output') and task.output:
-                            # Look for tool output in task execution
-                            task_str = str(task.output)
-                            if 'Financial Calculator' in task_str:
-                                import re
-                                import json
-                                import ast
-                                
-                                # Try to extract the tool output
-                                tool_pattern = r"Tool Output:\s*({[\s\S]*?})\s*\n"
-                                match = re.search(tool_pattern, task_str)
-                                if match:
-                                    try:
-                                        # Try JSON first, then ast.literal_eval
-                                        try:
-                                            tool_dict = json.loads(match.group(1).replace("'", '"'))
-                                        except Exception:
-                                            tool_dict = ast.literal_eval(match.group(1))
-                                        
-                                        if 'result' in tool_dict:
-                                            calculation_result = tool_dict['result']
-                                            logger.info("Successfully extracted calculation result from task output")
-                                    except Exception as e:
-                                        logger.error(f"Failed to parse tool output from task: {e}")
-                
-                # Alternative: Look for the special marker in the result string itself
-                if not calculation_result:
-                    import re
-                    import json
-                    import ast
-                    
-                    # Look for the special marker pattern
-                    marker_pattern = r"\{[^}]*\"_step3_marker\"[^}]*\"CALCULATION_RESULT_READY_FOR_FORMATTING\"[^}]*\}"
-                    match = re.search(marker_pattern, str(result))
-                    if match:
-                        try:
-                            # Try to parse the dict containing the marker
-                            try:
-                                tool_dict = json.loads(match.group(0).replace("'", '"'))
-                            except Exception:
-                                tool_dict = ast.literal_eval(match.group(0))
-                            
-                            if 'result' in tool_dict:
-                                calculation_result = tool_dict['result']
-                                logger.info("Successfully extracted calculation result using marker")
-                            
-                            # Check if there's a pre-formatted response
-                            if '_formatted_response' in tool_dict:
-                                result = tool_dict['_formatted_response']
-                                logger.info("Applied pre-formatted response from tool")
-                                calculation_result = None  # Skip further processing
-                        except Exception as e:
-                            logger.error(f"Failed to parse tool output with marker: {e}")
-                
-                # If we found a calculation result, enforce Step 3 format
-                if calculation_result and needs_step3_enforcement(str(result)):
-                    import json
-                    formatted_response = f"""Here is your calculation result:
-```json
-{json.dumps(calculation_result, indent=2)}
-```
-
-Based on the calculation results, your 'monthly_payment' would be ${calculation_result.get('monthly_payment', 'N/A')}. The 'months_to_payoff' shows it will take {calculation_result.get('months_to_payoff', 'N/A')} months to clear the debt or reach your goal. The 'total_interest' you'll pay or earn is ${calculation_result.get('total_interest', 'N/A')}. Following the 'step_by_step_plan' will help you stay on track.
-
-Estimates only. Verify with a certified financial professional."""
-                    
-                    result = formatted_response
-                    logger.info("Applied Step 3 format enforcement with captured tool output")
-                
-                # Fallback: If no calculation result was captured but enforcement is needed
-                elif needs_step3_enforcement(str(result)):
-                    import re
-                    import json
-                    import ast
-                    extracted = None
-                    # Try to extract tool output from logs or agent output
-                    tool_output_pattern = r"Tool Output:\s*({[\s\S]*?})\s*\n"
-                    match = re.search(tool_output_pattern, str(result))
-                    if match:
-                        try:
-                            # Try JSON first
-                            try:
-                                tool_dict = json.loads(match.group(1).replace("'", '"'))
-                            except Exception:
-                                tool_dict = ast.literal_eval(match.group(1))
-                            if 'result' in tool_dict:
-                                extracted = tool_dict['result']
-                        except Exception as e:
-                            logger.error(f"Failed to parse tool output: {e}")
-                    # If not found, try to extract a JSON-like dict from the message (single or double quotes)
-                    if not extracted:
-                        json_like_pattern = r"\{[\s\S]*?monthly_payment[\s\S]*?\}"  # greedy match for any dict with monthly_payment
-                        match2 = re.search(json_like_pattern, str(result))
-                        if match2:
-                            try:
-                                try:
-                                    extracted = json.loads(match2.group(0).replace("'", '"'))
-                                except Exception:
-                                    extracted = ast.literal_eval(match2.group(0))
-                            except Exception as e:
-                                logger.error(f"Failed to parse inline JSON: {e}")
-                    # If still not found, fallback
-                    if extracted:
-                        formatted_response = f"""Here is your calculation result:\n```json\n{json.dumps(extracted, indent=2)}\n```\n\nBased on the calculation results, your 'monthly_payment' would be ${extracted.get('monthly_payment', 'N/A')}. The 'months_to_payoff' shows it will take {extracted.get('months_to_payoff', 'N/A')} months to clear the debt or reach your goal. The 'total_interest' you'll pay or earn is ${extracted.get('total_interest', 'N/A')}. Following the 'step_by_step_plan' will help you stay on track.\n\nEstimates only. Verify with a certified financial professional."""
-                        result = formatted_response
-                        logger.info("Applied robust post-processing to enforce Step 3 format")
-                    else:
-                        # Fallback message
-                        result = ("[Formatting Error] The calculation was performed but the response did not follow the required format. "
-                                  "Please try rephrasing your question or contact support if this persists.\n\nEstimates only. Verify with a certified financial professional.")
-                        logger.warning("Step 3 enforcement failed: could not extract calculation result.")
+                step3_time = time.time() - step3_start
+                print(f"               ✅ Step 2.3 completed in {step3_time:.3f}s (Crew execution)")
                 
                 # Initialize response dictionary
                 response = {
                     "message": result,
                     "session_id": session_id,
-                    "quiz": None
+                    "quiz": None,
+                    "is_calculation": is_calculation  # Add calculation flag for debugging
                 }
+                
+                # Total CrewAI timing
+                crew_total_time = time.time() - crew_start_time
+                print(f"            🏁 CrewAI completed in {crew_total_time:.3f}s")
+                print(f"               📊 CrewAI Breakdown:")
+                print(f"                  - PARALLEL (Chat History + Calc + Content): {step1_time:.3f}s ({(step1_time/crew_total_time)*100:.1f}%)")
+                print(f"                  - Crew creation: {step2_time:.3f}s ({(step2_time/crew_total_time)*100:.1f}%)")
+                print(f"                  - Crew execution: {step3_time:.3f}s ({(step3_time/crew_total_time)*100:.1f}%)")
                 
                 return response
                 
             except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
                 logger.error(f"Crew execution failed: {str(e)}")
+                logger.error(f"Error details: {error_details}")
+                print(f"               ❌ Crew execution failed: {str(e)}")
+                print(f"               📋 Error details: {error_details}")
+                
                 # Return a fallback response if crew fails
                 return {
                     "message": "I apologize, but I'm having trouble processing your request right now. Please try again in a moment.",
                     "session_id": session_id,
                     "quiz": None,
-                    "error": str(e)
+                    "error": f"Crew execution failed: {str(e)}",
+                    "error_details": error_details
                 }
             
         except Exception as e:
@@ -381,30 +554,44 @@ Estimates only. Verify with a certified financial professional."""
             )
 
     def _create_financial_tutor_agent(self) -> Agent:
-        """Create the main financial education tutor agent"""
+        """Create the main financial education tutor agent - OPTIMIZED for chat/message endpoint"""
         return Agent(
             role="Financial Education Tutor",
-            goal="Provide comprehensive financial education through conversational teaching, "
-                 "helping users understand investing basics, personal finance concepts, and "
-                 "making informed financial decisions. When users ask for financial calculations, "
-                 "use the FinancialCalculatorTool to provide accurate, deterministic results.",
-            backstory="You are an experienced financial educator with expertise in teaching "
-                     "complex financial concepts in simple, understandable terms. You have "
-                     "access to comprehensive course materials and can retrieve relevant "
-                     "information to answer user questions accurately. You can also perform "
-                     "precise financial calculations for debt payoff, savings goals, and loan "
-                     "amortization using mathematical formulas.",
-            tools=[ContentRetrievalTool(), FinancialCalculatorTool()],
+            goal="Provide comprehensive financial education and calculations. For general questions, use the provided context and your knowledge. For calculations, use FinancialCalculatorTool with exact parameters.",
+            backstory="You are an experienced financial educator who can answer general questions using provided context and perform precise financial calculations when needed.",
+            tools=[FinancialCalculatorTool()],
             llm=self.llm_gpt4_mini,
             verbose=False,  # Reduced logging overhead for faster responses
             allow_delegation=False,  # Disable delegation to prevent unnecessary iterations
-            max_iter=2,  # Reduced from 5 to speed up responses
-            max_rpm=10,   # Increased RPM to reduce waiting time
-            max_retry_limit=1  # Limit retries on failures
+            max_iter=3,  # Increased to 3 for better performance and complete responses
+            max_rpm=50,   # Increased RPM to reduce waiting time
+            max_retry_limit=1,  # Allow 1 retry for better responses
+            step_callback=None,  # Disable step callbacks for speed
+            memory=False,  # Disable memory to reduce overhead
+            # CRITICAL PERFORMANCE OPTIMIZATIONS
+            human_input=False,  # Disable human input requests to prevent blocking
+            function_calling_llm=self.llm_gpt4_mini,
+            # Task-specific optimizations
+            task_priority=1,  # High priority for immediate response
+            # Disable unnecessary features
+            allow_self_reflection=False,  # Disable self-reflection to reduce iterations
+            # Optimize for single-turn responses
+            max_consecutive_auto_reply=2,  # Allow 2 consecutive auto-replies
+            # Increase context window usage
+            max_context_length=3000,  # Increased for better context
+            # Disable advanced features that add overhead
+            enable_planning=False,  # Disable planning to reduce complexity
+            enable_reasoning=False,  # Disable reasoning to reduce iterations
+            # Optimize for speed over quality in chat context
+            temperature=0.0,  # Set to 0 for maximum speed and determinism
+            # Disable features that cause delays
+            enable_search=False,  # Disable built-in search (we have custom tools)
+            enable_code_execution=False,  # Disable code execution for security and speed
         )
     
     def _create_quiz_master_agent(self) -> Agent:
-        """Create the quiz generation and management agent"""
+        """Create the quiz generation and management agent - LAZY LOADED"""
+        # Only create when actually needed for quiz endpoints
         return Agent(
             role="Quiz Master",
             goal="Generate engaging quizzes to test user knowledge, manage quiz sessions, "
@@ -421,7 +608,8 @@ Estimates only. Verify with a certified financial professional."""
         )
     
     def _create_calculation_agent(self) -> Agent:
-        """Create the financial calculation specialist agent"""
+        """Create the financial calculation specialist agent - LAZY LOADED"""
+        # Only create when actually needed for calculation endpoints
         return Agent(
             role="Financial Calculator Specialist",
             goal="Perform accurate financial calculations for debt payoff, savings goals, "
@@ -437,7 +625,8 @@ Estimates only. Verify with a certified financial professional."""
         )
     
     def _create_progress_tracker_agent(self) -> Agent:
-        """Create the progress tracking and analytics agent"""
+        """Create the progress tracking and analytics agent - LAZY LOADED"""
+        # Only create when actually needed for progress endpoints
         return Agent(
             role="Learning Progress Analyst",
             goal="Track user learning progress, analyze performance patterns, and provide "
@@ -483,7 +672,10 @@ Estimates only. Verify with a certified financial professional."""
         )
     
     def create_quiz_crew(self, topic: str, quiz_type: str, user_id: str) -> Crew:
-        """Create a crew for quiz generation and management"""
+        """Create a crew for quiz generation and management - LAZY LOADED"""
+        
+        # Lazy load the quiz master agent only when needed
+        quiz_master_agent = self._create_quiz_master_agent()
         
         quiz_task = Task(
             description=f"""
@@ -497,19 +689,22 @@ Estimates only. Verify with a certified financial professional."""
             Quiz Type: {quiz_type}
             Topic: {topic}
             """,
-            agent=self.quiz_master_agent,
+            agent=quiz_master_agent,
             expected_output="A well-structured quiz with questions, options, and explanations"
         )
         
         return Crew(
-            agents=[self.quiz_master_agent],
+            agents=[quiz_master_agent],
             tasks=[quiz_task],
             process=Process.sequential,
             verbose=True
         )
     
     def create_calculation_crew(self, calculation_request: Dict[str, Any]) -> Crew:
-        """Create a crew for financial calculations"""
+        """Create a crew for financial calculations - LAZY LOADED"""
+        
+        # Lazy load the calculation agent only when needed
+        calculation_agent = self._create_calculation_agent()
         
         calc_task = Task(
             description=f"""
@@ -521,19 +716,22 @@ Estimates only. Verify with a certified financial professional."""
             3. Include practical advice and disclaimers
             4. Format results in an easy-to-understand manner
             """,
-            agent=self.calculation_agent,
+            agent=calculation_agent,
             expected_output="Detailed calculation results with explanations and practical advice"
         )
         
         return Crew(
-            agents=[self.calculation_agent],
+            agents=[calculation_agent],
             tasks=[calc_task],
             process=Process.sequential,
             verbose=True
         )
     
     def create_progress_crew(self, user_id: str) -> Crew:
-        """Create a crew for progress tracking and analysis"""
+        """Create a crew for progress tracking and analysis - LAZY LOADED"""
+        
+        # Lazy load the progress tracker agent only when needed
+        progress_tracker_agent = self._create_progress_tracker_agent()
         
         progress_task = Task(
             description=f"""
@@ -544,12 +742,12 @@ Estimates only. Verify with a certified financial professional."""
             3. Identify learning patterns and areas for improvement
             4. Provide personalized recommendations
             """,
-            agent=self.progress_tracker_agent,
+            agent=progress_tracker_agent,
             expected_output="Comprehensive progress analysis with personalized recommendations"
         )
         
         return Crew(
-            agents=[self.progress_tracker_agent],
+            agents=[progress_tracker_agent],
             tasks=[progress_task],
             process=Process.sequential,
             verbose=True

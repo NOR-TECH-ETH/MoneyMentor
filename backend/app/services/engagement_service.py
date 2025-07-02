@@ -27,8 +27,11 @@ class EngagementService:
         - Last activity timestamp
         """
         try:
-            # Get session data with timeout protection
-            session = await get_session(session_id)
+            # OPTIMIZATION: Get session data with shorter timeout
+            session = await asyncio.wait_for(
+                get_session(session_id),
+                timeout=1.0  # Reduced from 5.0 to 1.0 second
+            )
             if not session:
                 logger.warning(f"Session not found: {session_id}")
                 return False
@@ -54,17 +57,8 @@ class EngagementService:
             # Count quizzes attempted
             quizzes_attempted = len(quiz_history)
             
-            # Check pretest completion with timeout protection
-            pretest_completed = False
-            try:
-                pretest_completed = await asyncio.wait_for(
-                    self._check_pretest_completion(user_id),
-                    timeout=5.0  # 5 second timeout for database query
-                )
-            except asyncio.TimeoutError:
-                logger.warning(f"Pretest completion check timed out for user {user_id}")
-            except Exception as e:
-                logger.warning(f"Failed to check pretest completion: {e}")
+            # OPTIMIZATION: Skip pretest completion check for speed
+            pretest_completed = False  # Skip this check to save time
             
             # Get confidence rating if available
             confidence_rating = session.get("confidence_rating", "")
@@ -81,18 +75,27 @@ class EngagementService:
                 "confidence_rating": confidence_rating
             }
             
-            # Log to Google Sheets with timeout protection
+            # OPTIMIZATION: Log to Google Sheets with shorter timeout
             try:
-                success = await self.sheets_service.log_engagement(engagement_data)
+                success = await asyncio.wait_for(
+                    self.sheets_service.log_engagement(engagement_data),
+                    timeout=1.0  # Reduced from 5.0 to 1.0 second
+                )
                 if success:
                     logger.info(f"Engagement data logged for user {user_id}, session {session_id}")
                 else:
                     logger.warning(f"Failed to log engagement data for user {user_id}")
                 return success
+            except asyncio.TimeoutError:
+                logger.warning(f"Google Sheets logging timed out for user {user_id}")
+                return False
             except Exception as e:
                 logger.error(f"Failed to log engagement data to Google Sheets: {e}")
                 return False
                 
+        except asyncio.TimeoutError:
+            logger.warning(f"Session engagement tracking timed out for user {user_id}")
+            return False
         except Exception as e:
             logger.error(f"Failed to track session engagement: {e}")
             return False

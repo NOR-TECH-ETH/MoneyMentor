@@ -1,20 +1,22 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+import time
+import asyncio
+import json
 from fastapi import HTTPException
 from app.agents.crew import money_mentor_crew
 from app.services.engagement_service import EngagementService
 
-import json
-
 from app.utils.session import get_session, create_session, add_chat_message, add_quiz_response, update_progress
 from app.services.google_sheets_service import GoogleSheetsService
+from app.utils.hybrid_memory_manager import hybrid_memory_manager
 
 logger = logging.getLogger(__name__)
 
 class ChatService:
-    """Service for handling chat interactions"""
+    """Service for handling chat interactions with optimized background processing"""
     
     def __init__(self):
         self.sheets_service = GoogleSheetsService()
@@ -25,15 +27,17 @@ class ChatService:
         query: str,
         session_id: str
     ) -> Dict[str, Any]:
-        """Process a chat message and return the response"""
+        """Process a chat message and return the response with optimized background processing"""
+        service_start_time = time.time()
+        print(f"      🔧 ChatService.process_message() started")
+        
         try:
-
-            
-            # Get or create session
+            # Step 1: Session management (CRITICAL - must be synchronous)
+            step1_start = time.time()
+            print(f"         📋 Step 1.1: Getting/creating session...")
             session = await get_session(session_id)
             if not session:
                 try:
-                    # Create new session if it doesn't exist
                     session = await create_session(session_id)
                     if not session:
                         raise HTTPException(status_code=500, detail="Failed to create session")
@@ -41,25 +45,35 @@ class ChatService:
                 except Exception as e:
                     logger.error(f"Failed to create session: {e}")
                     raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
+            step1_time = time.time() - step1_start
+            print(f"         ✅ Step 1.1 completed in {step1_time:.3f}s (Session management)")
             
-            # Add user message to chat history
-            await add_chat_message(session_id, {
+            # Step 2: Essential memory operations (CRITICAL - needed for context)
+            step2_start = time.time()
+            print(f"         🧠 Step 1.2: Essential memory operations...")
+            
+            user_message = {
                 "role": "user",
                 "content": query,
-                "timestamp": datetime.utcnow().isoformat()
-            })
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
             
-            # Get chat history for context
-            chat_history = session.get("chat_history", [])
-            # print(f"Chat history: {json.dumps(chat_history, indent=2)}")
-            if not isinstance(chat_history, list):
-                chat_history = []
+            user_id = session.get("user_id", session_id)
             
-            # Process message with CrewAI
+            # OPTIMIZATION: Pass empty chat_history to let CrewAI fetch it in parallel
+            # This allows CrewAI to run chat history fetching + content retrieval + calculation detection simultaneously
+            chat_history = []  # Empty - will be fetched in parallel by CrewAI
+            
+            step2_time = time.time() - step2_start
+            print(f"         ✅ Step 1.2 completed in {step2_time:.3f}s (Essential memory operations - OPTIMIZED)")
+            
+            # Step 3: CrewAI processing with PARALLEL optimization (MAIN BOTTLENECK - must be synchronous)
+            step3_start = time.time()
+            print(f"         🤖 Step 1.3: CrewAI processing with PARALLEL optimization...")
             try:
                 response = await money_mentor_crew.process_message(
                     message=query,
-                    chat_history=chat_history,
+                    chat_history=chat_history,  # Empty - CrewAI will fetch in parallel
                     session_id=session_id
                 )
                 
@@ -80,63 +94,61 @@ class ChatService:
                     "error": str(crew_error)
                 }
             
-            # Add assistant response to chat history
-            await add_chat_message(session_id, {
-                "role": "assistant",
-                "content": response["message"],
-                "timestamp": datetime.utcnow().isoformat()
-            })
+            step3_time = time.time() - step3_start
+            print(f"         ✅ Step 1.3 completed in {step3_time:.3f}s (CrewAI processing with PARALLEL optimization)")
             
-            # Update progress if available
-            if response.get("progress"):
-                await update_progress(session_id, response["progress"])
-            
-            # Handle quiz if generated
-            if response.get("quiz"):
-                quiz_id = str(uuid.uuid4())
-                quiz_data = response["quiz"]
-                if isinstance(quiz_data, dict) and "questions" in quiz_data:
-                    await add_quiz_response(session_id, {
-                        "quiz_id": quiz_id,
-                        "questions": quiz_data["questions"]
-                    })
-                    response["quiz"]["id"] = quiz_id
-            
-            # Add session_id to response
+            # Step 4: Add session_id to response (CRITICAL - must be synchronous)
             response["session_id"] = session_id
             
-            # Log chat interaction to Google Sheets
-            try:
-                # Extract user_id from session or use session_id as fallback
-                user_id = session.get("user_id", session_id)
-                
-                # Log the chat message
-                chat_log_data = {
-                    "user_id": user_id,
-                    "session_id": session_id,
-                    "message_type": "user",
-                    "message": query,
-                    "response": response["message"]
-                }
-                self.sheets_service.log_chat_message(chat_log_data)
-                
-            except Exception as e:
-                logger.warning(f"Failed to log chat message to Google Sheets: {e}")
-                # Don't fail the main request if logging fails
+            # Add calculation detection to response
+            response["is_calculation"] = self._is_calculation_request(query)
             
-            # Track engagement metrics (non-blocking)
-            try:
-                # Lazy initialization to avoid circular imports
-                if self.engagement_service is None:
-                    self.engagement_service = EngagementService()
-                
-                # Run engagement tracking in background without waiting
-                import asyncio
-                asyncio.create_task(self._track_engagement_async(user_id, session_id))
-                
-            except Exception as e:
-                logger.warning(f"Failed to initialize engagement tracking: {e}")
-                # Don't fail the main request if engagement tracking initialization fails
+            # Step 5: Background tasks (ALL NON-CRITICAL OPERATIONS)
+            step5_start = time.time()
+            print(f"         🔄 Step 1.5: Background tasks (ALL NON-CRITICAL OPERATIONS)...")
+            
+            # Create all background tasks without waiting
+            background_tasks = []
+            
+            # Background Task 1: Memory operations
+            background_tasks.append(self._background_memory_operations(
+                session_id, user_id, user_message, response["message"]
+            ))
+            
+            # Background Task 2: Progress updates
+            if response.get("progress"):
+                background_tasks.append(self._background_progress_update(session_id, response["progress"]))
+            
+            # Background Task 3: Quiz handling
+            if response.get("quiz"):
+                background_tasks.append(self._background_quiz_handling(session_id, response["quiz"]))
+            
+            # Background Task 4: Analytics and logging
+            background_tasks.append(self._background_analytics(
+                user_id, session_id, query, response["message"]
+            ))
+            
+            # Fire-and-forget all background tasks
+            for task in background_tasks:
+                asyncio.create_task(task)
+            
+            step5_time = time.time() - step5_start
+            print(f"         ✅ Step 1.5 completed in {step5_time:.3f}s (Background tasks - OPTIMIZED)")
+            
+            # Total ChatService timing
+            service_total_time = time.time() - service_start_time
+            print(f"      🏁 ChatService completed in {service_total_time:.3f}s")
+            print(f"         📊 ChatService Breakdown:")
+            print(f"            - Session management: {step1_time:.3f}s ({(step1_time/service_total_time)*100:.1f}%)")
+            print(f"            - Essential memory: {step2_time:.3f}s ({(step2_time/service_total_time)*100:.1f}%)")
+            print(f"            - CrewAI (PARALLEL): {step3_time:.3f}s ({(step3_time/service_total_time)*100:.1f}%)")
+            print(f"            - Background tasks: {step5_time:.3f}s ({(step5_time/service_total_time)*100:.1f}%)")
+            
+            # Performance analysis
+            if response.get("is_calculation"):
+                print(f"         🧮 CALCULATION REQUEST detected - optimized processing used")
+            else:
+                print(f"         💬 GENERAL CHAT REQUEST - standard processing used")
             
             return response
             
@@ -149,19 +161,304 @@ class ChatService:
                 detail=f"Failed to process message: {str(e)}"
             )
     
-    async def _track_engagement_async(self, user_id: str, session_id: str):
-        """Track engagement metrics asynchronously with timeout protection"""
+    async def _background_memory_operations(self, session_id: str, user_id: str, user_message: Dict, assistant_message: str):
+        """Background memory operations - fire and forget"""
         try:
-            # Set a timeout for engagement tracking
-            import asyncio
+            # Add user message to chat history
+            await add_chat_message(session_id, user_message)
+            
+            # Add user message to hybrid memory
+            await hybrid_memory_manager.add_to_memory(user_message, user_id, session_id)
+            
+            # Add assistant response to chat history
+            assistant_msg = {
+                "role": "assistant",
+                "content": assistant_message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            await add_chat_message(session_id, assistant_msg)
+            
+            # Add assistant response to hybrid memory
+            await hybrid_memory_manager.add_to_memory(assistant_msg, user_id, session_id)
+            
+            logger.info(f"Background memory operations completed for session {session_id}")
+            
+        except Exception as e:
+            logger.warning(f"Background memory operations failed for session {session_id}: {e}")
+    
+    async def _background_progress_update(self, session_id: str, progress: Dict[str, Any]):
+        """Background progress update - fire and forget"""
+        try:
+            await update_progress(session_id, progress)
+            logger.info(f"Background progress update completed for session {session_id}")
+        except Exception as e:
+            logger.warning(f"Background progress update failed for session {session_id}: {e}")
+    
+    async def _background_quiz_handling(self, session_id: str, quiz_data: Dict[str, Any]):
+        """Background quiz handling - fire and forget"""
+        try:
+            quiz_id = str(uuid.uuid4())
+            if isinstance(quiz_data, dict) and "questions" in quiz_data:
+                await add_quiz_response(session_id, {
+                    "quiz_id": quiz_id,
+                    "questions": quiz_data["questions"]
+                })
+                logger.info(f"Background quiz handling completed for session {session_id}")
+        except Exception as e:
+            logger.warning(f"Background quiz handling failed for session {session_id}: {e}")
+    
+    async def _background_analytics(self, user_id: str, session_id: str, query: str, response: str):
+        """Background analytics and logging - fire and forget"""
+        try:
+            # Google Sheets logging with very short timeout
+            chat_log_data = {
+                "user_id": user_id,
+                "session_id": session_id,
+                "message_type": "user",
+                "message": query,
+                "response": response
+            }
+            
+            # Set very short timeout for Google Sheets logging
+            await asyncio.wait_for(
+                self.sheets_service.log_chat_message(chat_log_data),
+                timeout=1.0  # Reduced from 2.0 to 1.0 seconds
+            )
+            
+            # Engagement tracking with shorter timeout
+            if self.engagement_service is None:
+                self.engagement_service = EngagementService()
+            
             await asyncio.wait_for(
                 self.engagement_service.track_session_engagement(user_id, session_id),
-                timeout=10.0  # 10 second timeout
+                timeout=1.5  # Reduced from 3.0 to 1.5 seconds
             )
-            logger.info(f"Engagement tracking completed for user {user_id}")
+            
+            logger.info(f"Background analytics completed for user {user_id}")
             
         except asyncio.TimeoutError:
-            logger.warning(f"Engagement tracking timed out for user {user_id}")
+            logger.warning(f"Background analytics timed out for user {user_id} - this is normal and doesn't affect the response")
         except Exception as e:
-            logger.warning(f"Engagement tracking failed for user {user_id}: {e}")
-            # Don't raise the exception - this is background processing 
+            logger.warning(f"Background analytics failed for user {user_id}: {e} - this doesn't affect the response")
+    
+    async def process_calculation_streaming(self, query: str, session_id: str):
+        """Process calculation requests with streaming response for better UX"""
+        try:
+            # Quick calculation detection
+            if not self._is_calculation_request(query):
+                # Not a calculation request - yield an error and return
+                yield {
+                    "type": "calculation_error",
+                    "message": "This is not a calculation request. Please ask a calculation question.",
+                    "session_id": session_id
+                }
+                return
+            
+            # Start streaming response
+            yield {
+                "type": "calculation_start",
+                "message": "Processing your calculation request...",
+                "session_id": session_id
+            }
+            
+            # Extract parameters (fast operation)
+            params = self._extract_calculation_params(query)
+            if not params:
+                yield {
+                    "type": "calculation_error",
+                    "message": "I couldn't extract the calculation parameters. Please provide specific amounts, rates, and timeframes.",
+                    "session_id": session_id
+                }
+                return
+            
+            yield {
+                "type": "calculation_progress",
+                "message": "Extracting calculation parameters...",
+                "session_id": session_id
+            }
+            
+            # Determine calculation type
+            calculation_type = self._determine_calculation_type(query)
+            
+            yield {
+                "type": "calculation_progress",
+                "message": f"Performing {calculation_type.replace('_', ' ')} calculation...",
+                "session_id": session_id
+            }
+            
+            # Perform calculation
+            from app.services.calculation_service import CalculationService
+            calc_service = CalculationService()
+            result = await calc_service.calculate(calculation_type, params)
+            
+            # Format response
+            formatted_response = f"""Here is your calculation result:
+```json
+{json.dumps(result, indent=2)}
+```
+
+Based on the calculation results, your 'monthly_payment' would be ${result.get('monthly_payment', 'N/A')}. The 'months_to_payoff' shows it will take {result.get('months_to_payoff', 'N/A')} months to clear the debt or reach your goal. The 'total_interest' you'll pay or earn is ${result.get('total_interest', 'N/A')}. Following the 'step_by_step_plan' will help you stay on track.
+
+Estimates only. Verify with a certified financial professional."""
+            
+            yield {
+                "type": "calculation_complete",
+                "message": formatted_response,
+                "session_id": session_id,
+                "calculation_result": result
+            }
+            
+        except Exception as e:
+            logger.error(f"Calculation streaming failed: {e}")
+            yield {
+                "type": "calculation_error",
+                "message": "I encountered an error processing your calculation request. Please check your input and try again.",
+                "session_id": session_id
+            }
+    
+    def _is_calculation_request(self, message: str) -> bool:
+        """Specific calculation detection using precise regex patterns"""
+        import re
+        
+        # More specific calculation patterns that require actual numbers
+        calculation_patterns = [
+            r'\$\d+(?:,\d{3})*(?:\.\d{2})?',  # Dollar amounts like $6,000.00
+            r'\d+(?:\.\d+)?\s*%',  # Percentage rates like 22% or 22.5%
+            r'how\s+much\s+(?:do\s+I\s+need\s+to\s+)?(?:pay|save|contribute)',  # "how much do I need to pay"
+            r'how\s+long\s+(?:will\s+it\s+take\s+to\s+)?(?:pay\s+off|clear|reach)',  # "how long will it take to pay off"
+            r'(?:pay\s+off|clear)\s+\$\d+',  # "pay off $6000"
+            r'\d+\s*(?:months?|years?)\s+(?:to\s+)?(?:pay\s+off|clear|reach)',  # "12 months to pay off"
+            r'monthly\s+payment\s+(?:of\s+)?\$\d+',  # "monthly payment of $500"
+            r'\$\d+\s+(?:per\s+)?month',  # "$500 per month"
+        ]
+        
+        # Check for specific calculation patterns
+        has_calculation_pattern = any(re.search(pattern, message.lower()) for pattern in calculation_patterns)
+        
+        # Check for definition/educational questions to exclude
+        definition_patterns = [
+            r'^what\s+is\s+',  # "What is APR?"
+            r'^how\s+does\s+',  # "How does APR work?"
+            r'^explain\s+',  # "Explain APR"
+            r'^tell\s+me\s+about\s+',  # "Tell me about APR"
+            r'^define\s+',  # "Define APR"
+            r'^why\s+',  # "Why is APR important?"
+        ]
+        
+        is_definition_question = any(re.search(pattern, message.lower()) for pattern in definition_patterns)
+        
+        # Check if the question contains financial keywords but no numbers
+        financial_keywords = [
+            'apr', 'interest rate', 'balance', 'payment', 'loan', 'credit card',
+            'savings', 'goal', 'debt', 'principal', 'amortization', 'compound interest'
+        ]
+        
+        has_financial_keywords = any(keyword in message.lower() for keyword in financial_keywords)
+        
+        # Check for numbers in the message
+        has_numbers = bool(re.search(r'\d+', message))
+        
+        # If it's a definition question with financial keywords but no numbers, treat as regular chat
+        if is_definition_question and has_financial_keywords and not has_numbers:
+            return False
+        
+        # Return True only if it has specific calculation patterns
+        return has_calculation_pattern
+    
+    def _extract_calculation_params(self, message: str) -> Dict[str, Any]:
+        """Extract calculation parameters using regex - only real extracted data, no defaults"""
+        import re
+        params = {}
+        
+        # Extract dollar amounts with better pattern matching
+        dollar_patterns = [
+            r'\$(\d+(?:,\d{3})*(?:\.\d{2})?)',  # $6,000.00
+            r'\$(\d+)\s*k',  # $6k
+            r'\$(\d+)\s*thousand',  # $6 thousand
+            r'(\d+)\s*k\s+dollars?',  # 6k dollars
+            r'(\d+)\s+thousand\s+dollars?',  # 6 thousand dollars
+        ]
+        
+        for pattern in dollar_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                amount_str = matches[0].replace(',', '')
+                amount = float(amount_str)
+                
+                # Convert k/thousand to actual amount
+                if 'k' in pattern or 'thousand' in pattern:
+                    amount *= 1000
+                
+                # Determine parameter name based on context
+                message_lower = message.lower()
+                if any(word in message_lower for word in ['save', 'goal', 'need', 'want', 'target']):
+                    params['target_amount'] = amount
+                else:
+                    params['balance'] = amount
+                break
+        
+        # Extract percentages with better pattern matching
+        percent_patterns = [
+            r'(\d+(?:\.\d+)?)\s*%',  # 22% or 22.5%
+            r'(\d+(?:\.\d+)?)\s*percent',  # 22 percent
+            r'apr\s+of\s+(\d+(?:\.\d+)?)',  # APR of 22
+            r'interest\s+rate\s+of\s+(\d+(?:\.\d+)?)',  # interest rate of 22
+        ]
+        
+        for pattern in percent_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                params['apr'] = float(matches[0])
+                break
+        
+        # Extract time periods with better pattern matching
+        time_patterns = [
+            (r'(\d+)\s*months?', 'target_months'),  # 12 months
+            (r'(\d+)\s*mo', 'target_months'),  # 12 mo
+            (r'(\d+)\s*years?', 'target_months'),  # 3 years -> 36 months
+            (r'(\d+)\s*yr', 'target_months'),  # 3 yr -> 36 months
+        ]
+        
+        for pattern, param_name in time_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                value = int(matches[0])
+                if 'year' in pattern or 'yr' in pattern:
+                    value *= 12  # Convert years to months
+                params[param_name] = value
+                break
+        
+        # Extract monthly payment if specified
+        payment_patterns = [
+            r'\$(\d+(?:,\d{3})*(?:\.\d{2})?)\s+(?:per\s+)?month',  # $500 per month
+            r'(\d+(?:,\d{3})*(?:\.\d{2})?)\s+dollars?\s+(?:per\s+)?month',  # 500 dollars per month
+            r'monthly\s+payment\s+of\s+\$(\d+(?:,\d{3})*(?:\.\d{2})?)',  # monthly payment of $500
+        ]
+        
+        for pattern in payment_patterns:
+            matches = re.findall(pattern, message, re.IGNORECASE)
+            if matches:
+                amount_str = matches[0].replace(',', '')
+                params['monthly_payment'] = float(amount_str)
+                break
+        
+        # Log extracted parameters for debugging
+        if params:
+            logger.info(f"Extracted calculation parameters: {params}")
+        else:
+            logger.warning(f"No parameters extracted from message: '{message}'")
+        
+        return params
+    
+    def _determine_calculation_type(self, message: str) -> str:
+        """Determine calculation type based on message content"""
+        message_lower = message.lower()
+        
+        if any(word in message_lower for word in ['credit', 'card', 'payoff']):
+            return 'credit_card_payoff'
+        elif any(word in message_lower for word in ['savings', 'goal', 'save']):
+            return 'savings_goal'
+        elif any(word in message_lower for word in ['student', 'loan', 'borrow']):
+            return 'student_loan'
+        else:
+            return 'credit_card_payoff' 

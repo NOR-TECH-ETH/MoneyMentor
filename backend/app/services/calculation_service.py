@@ -15,6 +15,19 @@ class CalculationService:
             "student_loan": self._calculate_student_loan_amortization
         }
     
+    def _calculate_monthly_payment(self, principal: float, monthly_rate: float, term_months: int) -> float:
+        """Calculate monthly payment using amortization formula"""
+        if monthly_rate > 0:
+            return principal * (monthly_rate * (1 + monthly_rate)**term_months) / ((1 + monthly_rate)**term_months - 1)
+        else:
+            return principal / term_months
+    
+    def _validate_positive_values(self, **kwargs):
+        """Validate that all provided values are positive"""
+        for name, value in kwargs.items():
+            if value <= 0:
+                raise ValueError(f"{name.replace('_', ' ').title()} must be greater than 0")
+    
     async def calculate(self, calculation_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Perform deterministic financial calculation with step-by-step plan"""
         try:
@@ -31,32 +44,29 @@ class CalculationService:
             raise
     
     async def _calculate_credit_card_payoff(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate credit card payoff timeline """
+        """Calculate credit card payoff timeline - only with real extracted data"""
         try:
-            balance = float(params.get('balance', params.get('principal', 0)))
-            apr = float(params.get('apr', params.get('interest_rate', 0)))
+            # Validate that we have the minimum required parameters
+            if 'balance' not in params:
+                raise ValueError("Missing required parameter: balance (loan amount)")
+            if 'apr' not in params:
+                raise ValueError("Missing required parameter: apr (interest rate)")
+            
+            balance = float(params['balance'])
+            apr = float(params['apr'])
             monthly_payment = params.get('monthly_payment')
             target_months = params.get('target_months')
             
-            if balance <= 0:
-                raise ValueError("Balance must be greater than 0")
-            if apr <= 0:
-                raise ValueError("APR must be greater than 0")
-            
+            self._validate_positive_values(balance=balance, apr=apr)
             monthly_rate = apr / 100 / 12
             
             # Calculate required payment if not provided
             if not monthly_payment:
                 if target_months:
-                    # Calculate payment needed to pay off in target months
-                    if monthly_rate > 0:
-                        monthly_payment = balance * (monthly_rate * (1 + monthly_rate)**target_months) / ((1 + monthly_rate)**target_months - 1)
-                    else:
-                        monthly_payment = balance / target_months
+                    monthly_payment = self._calculate_monthly_payment(balance, monthly_rate, target_months)
                 else:
-                    # Default to 36 months if no target specified
-                    target_months = 36
-                    monthly_payment = balance * (monthly_rate * (1 + monthly_rate)**target_months) / ((1 + monthly_rate)**target_months - 1)
+                    # If no target months specified, we can't calculate without making assumptions
+                    raise ValueError("Missing required parameter: target_months or monthly_payment")
             
             # Calculate actual payoff timeline
             remaining_balance = balance
@@ -96,12 +106,18 @@ class CalculationService:
             raise
     
     async def _calculate_savings_goal(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate savings goal projection """
+        """Calculate savings goal projection - only with real extracted data"""
         try:
-            target_amount = float(params.get('target_amount', 0))
-            timeframe_months = int(params.get('timeframe_months', params.get('target_months', 0)))
-            current_savings = float(params.get('current_savings', 0))
-            interest_rate = float(params.get('interest_rate', 0))
+            # Validate that we have the minimum required parameters
+            if 'target_amount' not in params:
+                raise ValueError("Missing required parameter: target_amount")
+            if 'target_months' not in params:
+                raise ValueError("Missing required parameter: target_months (timeframe)")
+            
+            target_amount = float(params['target_amount'])
+            timeframe_months = int(params['target_months'])
+            current_savings = float(params.get('current_savings', 0))  # Default to 0 if not specified
+            interest_rate = float(params.get('interest_rate', 0))  # Default to 0 if not specified
             
             if target_amount <= 0:
                 raise ValueError("Target amount must be greater than 0")
@@ -168,28 +184,27 @@ class CalculationService:
             raise
     
     async def _calculate_student_loan_amortization(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate student loan amortization - matches client requirements exactly"""
+        """Calculate student loan amortization - only with real extracted data"""
         try:
-            principal = float(params.get('principal', params.get('loan_amount', 0)))
-            apr = float(params.get('apr', params.get('interest_rate', 0)))
-            term_months = int(params.get('term_months', params.get('loan_term', 30) * 12))
+            # Validate that we have the minimum required parameters
+            if 'balance' not in params and 'principal' not in params:
+                raise ValueError("Missing required parameter: balance or principal (loan amount)")
+            if 'apr' not in params:
+                raise ValueError("Missing required parameter: apr (interest rate)")
+            if 'target_months' not in params:
+                raise ValueError("Missing required parameter: target_months (loan term)")
+            
+            principal = float(params.get('balance', params.get('principal')))
+            apr = float(params['apr'])
+            term_months = int(params['target_months'])
             monthly_payment = params.get('monthly_payment')
             
-            if principal <= 0:
-                raise ValueError("Principal must be greater than 0")
-            if apr <= 0:
-                raise ValueError("APR must be greater than 0")
-            if term_months <= 0:
-                raise ValueError("Term must be greater than 0")
-            
+            self._validate_positive_values(principal=principal, apr=apr, term_months=term_months)
             monthly_rate = apr / 100 / 12
             
             # Calculate monthly payment if not provided
             if not monthly_payment:
-                if monthly_rate > 0:
-                    monthly_payment = principal * (monthly_rate * (1 + monthly_rate)**term_months) / ((1 + monthly_rate)**term_months - 1)
-                else:
-                    monthly_payment = principal / term_months
+                monthly_payment = self._calculate_monthly_payment(principal, monthly_rate, term_months)
             
             # Calculate total payments and interest
             total_payments = monthly_payment * term_months

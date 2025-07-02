@@ -503,14 +503,14 @@ MoneyMentor Team
                 # Run the API call with timeout
                 result = await asyncio.wait_for(
                     asyncio.to_thread(make_api_call),
-                    timeout=10.0  # 10 second timeout
+                    timeout=2.0  # Reduced from 10.0 to 2.0 seconds
                 )
                 
                 logger.info(f"Engagement data logged to Google Sheets: {result.get('updates', {}).get('updatedRows', 0)} rows updated")
                 return True
                 
             except asyncio.TimeoutError:
-                logger.error("Google Sheets API call timed out after 10 seconds")
+                logger.error("Google Sheets API call timed out after 2 seconds")
                 return False
             except Exception as api_error:
                 logger.error(f"Google Sheets API error: {api_error}")
@@ -520,7 +520,7 @@ MoneyMentor Team
             logger.error(f"Failed to log engagement data to Google Sheets: {e}")
             return False
     
-    def log_chat_message(self, chat_data: Dict[str, Any]) -> bool:
+    async def log_chat_message(self, chat_data: Dict[str, Any]) -> bool:
         """
         Log chat message to Google Sheets ChatLogs tab
         
@@ -556,13 +556,30 @@ MoneyMentor Team
                 'values': [row_data]
             }
             
-            result = self.service.spreadsheets().values().append(
-                spreadsheetId=self.spreadsheet_id,
-                range='ChatLogs!A:F',
-                valueInputOption='RAW',
-                insertDataOption='INSERT_ROWS',
-                body=body
-            ).execute()
+            # Use asyncio timeout for the API call
+            try:
+                # Create a coroutine that wraps the sync API call
+                def make_api_call():
+                    return self.service.spreadsheets().values().append(
+                        spreadsheetId=self.spreadsheet_id,
+                        range='ChatLogs!A:F',
+                        valueInputOption='RAW',
+                        insertDataOption='INSERT_ROWS',
+                        body=body
+                    ).execute()
+                
+                # Run the API call with timeout
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(make_api_call),
+                    timeout=2.0  # 2 second timeout
+                )
+                
+            except asyncio.TimeoutError:
+                logger.error("Google Sheets chat logging timed out after 2 seconds")
+                return False
+            except Exception as api_error:
+                logger.error(f"Google Sheets API error: {api_error}")
+                return False
             
             logger.info(f"Chat message logged to Google Sheets: {result.get('updates', {}).get('updatedRows', 0)} rows updated")
             return True
@@ -574,7 +591,7 @@ MoneyMentor Team
             logger.error(f"Failed to log chat message to Google Sheets: {e}")
             return False
     
-    def log_course_progress(self, progress_data: Dict[str, Any]) -> bool:
+    async def log_course_progress(self, progress_data: Dict[str, Any]) -> bool:
         """
         Log course progress to Google Sheets CourseProgress tab
         
@@ -614,13 +631,30 @@ MoneyMentor Team
                 'values': [row_data]
             }
             
-            result = self.service.spreadsheets().values().append(
-                spreadsheetId=self.spreadsheet_id,
-                range='CourseProgress!A:H',
-                valueInputOption='RAW',
-                insertDataOption='INSERT_ROWS',
-                body=body
-            ).execute()
+            # Use asyncio timeout for the API call
+            try:
+                # Create a coroutine that wraps the sync API call
+                def make_api_call():
+                    return self.service.spreadsheets().values().append(
+                        spreadsheetId=self.spreadsheet_id,
+                        range='CourseProgress!A:H',
+                        valueInputOption='RAW',
+                        insertDataOption='INSERT_ROWS',
+                        body=body
+                    ).execute()
+                
+                # Run the API call with timeout
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(make_api_call),
+                    timeout=2.0  # 2 second timeout
+                )
+                
+            except asyncio.TimeoutError:
+                logger.error("Google Sheets course progress logging timed out after 2 seconds")
+                return False
+            except Exception as api_error:
+                logger.error(f"Google Sheets API error: {api_error}")
+                return False
             
             logger.info(f"Course progress logged to Google Sheets: {result.get('updates', {}).get('updatedRows', 0)} rows updated")
             return True

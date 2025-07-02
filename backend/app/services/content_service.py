@@ -4,23 +4,16 @@ import logging
 from datetime import datetime, timedelta
 import uuid
 import time
-from pathlib import Path
 import PyPDF2
-from pptx import Presentation
 import docx2txt
-import tiktoken
 import tempfile
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-import aiohttp
 from tenacity import retry, stop_after_attempt, wait_exponential
-import json
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import SupabaseVectorStore
-from supabase import Client
 
 from app.core.config import settings
 from app.core.database import get_supabase
@@ -334,8 +327,9 @@ class ContentService:
             logger.error(f"Word document text extraction failed: {e}")
             raise
     
-    async def search_content(self, query: str, limit: Optional[int] = 5, threshold: float = 0.7) -> List[Dict[str, Any]]:
-        """Search content using vector similarity with robust error handling"""
+    async def search_content(self, query: str, limit: Optional[int] = 5, threshold: float = 0.3) -> List[Dict[str, Any]]:
+        """Search content using vector similarity search with caching for optimal performance"""
+        start_time = time.time()
         try:
             if not query or not isinstance(query, str):
                 logger.warning("Invalid query parameter provided")
@@ -354,173 +348,63 @@ class ContentService:
             except (ValueError, TypeError):
                 threshold = 0.7
             
-            # Generate query embedding with retry logic
-            try:
-                query_embedding = await self.embeddings.aembed_query(query)
-            except Exception as e:
-                logger.error(f"Failed to generate embedding: {e}")
-                return []
+            # OPTIMIZATION: Use a more aggressive threshold for faster results
+            # For chat context, we want quick, relevant results rather than perfect matches
+            optimized_threshold = max(0.15, threshold - 0.1)  # Lower threshold for speed
             
-            # Try vector search first
-            try:
-                result = self.supabase.rpc(
-                    'match_chunks',
-                    {
-                        'query_embedding': query_embedding,
-                        'match_threshold': threshold,
-                        'match_count': limit
-                    }
-                ).execute()
-                
-                if result.data:
-                    # Process and validate results
-                    processed_results = []
-                    for item in result.data:
-                        if isinstance(item, dict) and 'content' in item:
-                            processed_results.append({
-                                'content': item['content'],
-                                'metadata': {
-                                    'file_id': item.get('file_id'),
-                                    'chunk_index': item.get('chunk_index')
-                                },
-                                'similarity': item.get('similarity', 0.0)
-                            })
-                    
-                    return processed_results
-                
-            except Exception as e:
-                logger.warning(f"Vector search failed, trying text search: {e}")
+            # OPTIMIZATION: Reduce limit for faster retrieval in chat context
+            optimized_limit = min(limit, 2)  # Max 2 results for chat context
             
-            # Fallback to text search if vector search fails
-            try:
-                logger.info("Using fallback text search")
-                result = self.supabase.table('content_chunks').select('content, file_id, chunk_index').ilike('content', f'%{query}%').limit(limit).execute()
-                
-                if result.data:
-                    processed_results = []
-                    for item in result.data:
-                        if isinstance(item, dict) and 'content' in item:
-                            processed_results.append({
-                                'content': item['content'],
-                                'metadata': {
-                                    'file_id': item.get('file_id'),
-                                    'chunk_index': item.get('chunk_index')
-                                },
-                                'similarity': 0.8  # Default similarity for text search
-                            })
-                    
-                    return processed_results
-                
-            except Exception as e:
-                logger.error(f"Text search also failed: {e}")
+            # Generate query embedding with optimized timeout
+            query_embedding = await asyncio.wait_for(
+                self.embeddings.aembed_query(query),
+                timeout=3  # Reduced timeout for faster response
+            )
             
-            logger.info(f"No results found for query: {query}")
-            return []
-            
-        except Exception as e:
-            logger.error(f"Content search failed: {e}")
-            return []
-    
-    def get_search_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics for vector search"""
-        try:
-            # Get index statistics
-            stats = self.supabase.rpc('get_vector_index_stats', {
-                'table_name': 'document_chunks',
-                'index_name': 'document_chunks_embedding_hnsw_idx'
+            # Execute vector search using the match_chunks RPC function with optimized parameters
+            result = self.supabase.rpc('match_chunks', {
+                'query_embedding': query_embedding,
+                'match_threshold': optimized_threshold,
+                'match_count': optimized_limit
             }).execute()
             
-            return {
-                'index_stats': stats.data,
-                'total_documents': len(self.get_document_list()),
-                'average_search_time': self._get_average_search_time()
-            }
-        except Exception as e:
-            logger.error(f"Failed to get performance metrics: {e}")
-            return {}
-    
-    def _get_average_search_time(self) -> float:
-        """Calculate average search time from recent queries"""
-        try:
-            # Get recent search times from Redis or database
-            # This is a placeholder - implement actual metric collection
-            return 0.0
-        except Exception as e:
-            logger.error(f"Failed to get average search time: {e}")
-            return 0.0
-    
-    def _extract_pptx_text(self, file_path: str) -> str:
-        """Extract text from PowerPoint file"""
-        try:
-            text = ""
-            presentation = Presentation(file_path)
+            if result.data:
+                # Process and validate results
+                processed_results = []
+                for item in result.data:
+                    if isinstance(item, dict) and 'content' in item:
+                        similarity = float(item.get('similarity', 0.0))
+                        # Only include results above threshold
+                        if similarity >= optimized_threshold:
+                            # OPTIMIZATION: Truncate content for faster processing
+                            content = item['content']
+                            if len(content) > 300:  # Limit content length
+                                content = content[:300] + "..."
+                            
+                            processed_results.append({
+                                'content': content,
+                                'metadata': {
+                                    'file_id': item.get('file_id'),
+                                    'chunk_index': item.get('chunk_index')
+                                },
+                                'similarity': similarity
+                            })
+                
+                search_time = time.time() - start_time
+                logger.info(f"ContentService: Found {len(processed_results)} results via vector search in {search_time:.3f}s")
+                return processed_results
             
-            for slide in presentation.slides:
-                for shape in slide.shapes:
-                    if hasattr(shape, "text"):
-                        text += shape.text + "\n"
-            
-            return text
-        except Exception as e:
-            logger.error(f"PowerPoint text extraction failed: {e}")
-            raise
-    
-    def get_document_list(self) -> List[Dict[str, Any]]:
-        """Get list of all ingested documents"""
-        try:
-            result = self.supabase.table('documents').select('*').execute()
-            return result.data
-        except Exception as e:
-            logger.error(f"Failed to get document list: {e}")
+            # No results found
+            search_time = time.time() - start_time
+            logger.info(f"ContentService: No results found for query '{query}' in {search_time:.3f}s")
             return []
-    
-    async def get_topics(self) -> List[str]:
-        """Get list of unique topics from content_chunks table."""
-        try:
-            result = self.supabase.table('content_chunks').select('metadata').execute()
-            topics = list({row['metadata']['topic'] for row in result.data if 'metadata' in row and 'topic' in row['metadata'] and row['metadata']['topic']})
-            return topics
-        except Exception as e:
-            logger.error(f"Failed to get topics: {e}")
+            
+        except asyncio.TimeoutError:
+            logger.warning("Vector search timed out after 3 seconds")
             return []
-    
-    async def add_topic(self, topic: str, description: str) -> bool:
-        """Add a new topic to the content system"""
-        try:
-            topic_data = {
-                "topic": topic,
-                "description": description,
-                "created_at": datetime.utcnow().isoformat()
-            }
-            
-            self.supabase.table('content_topics').insert(topic_data).execute()
-            return True
         except Exception as e:
-            logger.error(f"Failed to add topic: {e}")
-            return False
-    
-    async def get_document_metadata(self, file_path: str) -> Optional[Dict[str, Any]]:
-        """Get metadata for a processed document"""
-        try:
-            result = self.supabase.table('documents').select('*').eq('file_path', file_path).execute()
-            return result.data[0] if result.data else None
-        except Exception as e:
-            logger.error(f"Failed to get document metadata: {e}")
-            return None
-    
-    async def delete_document(self, file_path: str) -> bool:
-        """Delete a document and its chunks from the system"""
-        try:
-            # Delete chunks
-            self.supabase.table('document_chunks').delete().eq('metadata->file_path', file_path).execute()
-            
-            # Delete document metadata
-            self.supabase.table('documents').delete().eq('file_path', file_path).execute()
-            
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete document: {e}")
-            return False
+            logger.error(f"ContentService: Content search failed: {e}")
+            return []
 
     async def delete_content_chunks(self, file_id: str) -> bool:
         """Delete all chunks associated with a file_id"""
