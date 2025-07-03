@@ -6,7 +6,7 @@ import time
 import asyncio
 import json
 from fastapi import HTTPException
-from app.agents.crew import money_mentor_crew
+from app.agents.function import money_mentor_function
 from app.services.engagement_service import EngagementService
 
 from app.utils.session import get_session, create_session, add_chat_message, add_quiz_response, update_progress
@@ -69,11 +69,11 @@ class ChatService:
             
             # Step 3: CrewAI processing with PARALLEL optimization (MAIN BOTTLENECK - must be synchronous)
             step3_start = time.time()
-            print(f"         🤖 Step 1.3: CrewAI processing with PARALLEL optimization...")
+            print(f"         🤖 Step 1.3: OpenAI processing with PARALLEL optimization...")
             try:
-                response = await money_mentor_crew.process_message(
+                response = await money_mentor_function.process_message(
                     message=query,
-                    chat_history=chat_history,  # Empty - CrewAI will fetch in parallel
+                    chat_history=chat_history,  # Empty - will be fetched in parallel
                     session_id=session_id
                 )
                 
@@ -87,15 +87,15 @@ class ChatService:
                 if "message" not in response:
                     response["message"] = "I apologize, but I couldn't generate a proper response."
                 
-            except Exception as crew_error:
-                logger.error(f"Crew processing failed: {crew_error}")
+            except Exception as openai_error:
+                logger.error(f"OpenAI processing failed: {openai_error}")
                 response = {
                     "message": "I apologize, but I encountered an error processing your message. Please try again.",
-                    "error": str(crew_error)
+                    "error": str(openai_error)
                 }
             
             step3_time = time.time() - step3_start
-            print(f"         ✅ Step 1.3 completed in {step3_time:.3f}s (CrewAI processing with PARALLEL optimization)")
+            print(f"         ✅ Step 1.3 completed in {step3_time:.3f}s (OpenAI processing with PARALLEL optimization)")
             
             # Step 4: Add session_id to response (CRITICAL - must be synchronous)
             response["session_id"] = session_id
@@ -141,7 +141,7 @@ class ChatService:
             print(f"         📊 ChatService Breakdown:")
             print(f"            - Session management: {step1_time:.3f}s ({(step1_time/service_total_time)*100:.1f}%)")
             print(f"            - Essential memory: {step2_time:.3f}s ({(step2_time/service_total_time)*100:.1f}%)")
-            print(f"            - CrewAI (PARALLEL): {step3_time:.3f}s ({(step3_time/service_total_time)*100:.1f}%)")
+            print(f"            - OpenAI (PARALLEL): {step3_time:.3f}s ({(step3_time/service_total_time)*100:.1f}%)")
             print(f"            - Background tasks: {step5_time:.3f}s ({(step5_time/service_total_time)*100:.1f}%)")
             
             # Performance analysis

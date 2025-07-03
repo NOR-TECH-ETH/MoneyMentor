@@ -7,7 +7,7 @@ import time
 import json
 from fastapi.responses import StreamingResponse
 
-from app.agents.crew import money_mentor_crew
+
 from app.core.config import settings
 from app.utils.session import (
     create_session,
@@ -20,6 +20,7 @@ from app.utils.session import (
 from app.services.content_service import ContentService
 from app.models.schemas import ChatMessageRequest
 from app.services.chat_service import ChatService
+from app.agents.function import money_mentor_function
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -100,47 +101,16 @@ async def process_message_streaming(
     print(f"\n🚀 CHAT STREAMING ENDPOINT STARTED: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
     
     try:
-        # Check if this is a calculation request
-        if chat_service._is_calculation_request(request.query):
-            print(f"   🧮 Detected calculation request, using streaming calculation...")
-            
-            async def calculation_stream():
-                async for chunk in chat_service.process_calculation_streaming(
-                    query=request.query,
-                    session_id=request.session_id
-                ):
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                
-                # Send end marker
-                yield f"data: {json.dumps({'type': 'stream_end'})}\n\n"
-            
-            return StreamingResponse(
-                calculation_stream(),
-                media_type="text/plain",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "Content-Type": "text/event-stream"
-                }
-            )
-        else:
-            # For non-calculation requests, use regular processing
-            print(f"   💬 Regular chat request, using standard processing...")
-            response = await chat_service.process_message(
-                query=request.query,
-                session_id=request.session_id
-            )
-            
-            # Return as single chunk for consistency
-            return StreamingResponse(
-                iter([f"data: {json.dumps(response)}\n\ndata: {json.dumps({'type': 'stream_end'})}\n\n"]),
-                media_type="text/plain",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "Content-Type": "text/event-stream"
-                }
-            )
+        # Use the new direct OpenAI streaming implementation
+        print(f"   🤖 Using new direct OpenAI streaming...")
+        
+        # Get the streaming response from the new function
+        streaming_response = await money_mentor_function.process_and_stream(
+            query=request.query,
+            session_id=request.session_id
+        )
+        
+        return streaming_response
         
     except Exception as e:
         total_time = time.time() - start_time

@@ -27,7 +27,7 @@ class MoneyMentorCrew:
             temperature=0.1,
             request_timeout=30,
             max_retries=2,
-            streaming=False,
+            streaming=True,
             provider="openai"
         )
         
@@ -37,7 +37,7 @@ class MoneyMentorCrew:
             temperature=0.0,  # Set to 0 for maximum speed and determinism
             request_timeout=30,  # Increased timeout for reliability
             max_retries=2,  # Allow retries for reliability
-            streaming=False,
+            streaming=True,
             provider="openai",
             # PERFORMANCE OPTIMIZATIONS
             max_tokens=1024,  # Increased for complete responses
@@ -394,17 +394,17 @@ class MoneyMentorCrew:
                         Example response format:
                         "Based on your calculation, you would need to save $516.08 per month to reach your $20,000 goal in 3 years. This means you'll contribute a total of $18,579.05 and earn $1,420.95 in interest. 
 
-Here's how it works:
-- Starting with $0.00 in savings
-- Target amount: $20,000.00
-- Timeframe: 36 months
-- Interest rate: 5.0% annually
-- Monthly contribution needed: $516.08
-- Total contributions: $18,579.05
-- Interest earned: $1,420.95
-- Final amount: $20,000.00
+                        Here's how it works:
+                        - Starting with $0.00 in savings
+                        - Target amount: $20,000.00
+                        - Timeframe: 36 months
+                        - Interest rate: 5.0% annually
+                        - Monthly contribution needed: $516.08
+                        - Total contributions: $18,579.05
+                        - Interest earned: $1,420.95
+                        - Final amount: $20,000.00
 
-Estimates only. Verify with a certified financial professional."
+                        Estimates only. Verify with a certified financial professional."
 
                         Execute the tool call now and explain the results naturally.
                         """
