@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, UUID4, field_validator
+from pydantic import BaseModel, Field, UUID4, field_validator, EmailStr
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 import uuid
 
@@ -81,7 +81,6 @@ class QuizSubmission(BaseModel):
 
 class QuizSubmissionBatch(BaseModel):
     """Schema for submitting multiple quiz responses at once"""
-    user_id: str = Field(..., description="User identifier")
     quiz_type: str = Field("micro", description="Type of quiz (micro, diagnostic, etc.)")
     session_id: Optional[str] = Field(None, description="Session identifier for tracking")
     responses: List[Dict[str, Any]] = Field(..., description="List of quiz responses")
@@ -431,4 +430,130 @@ class CourseCompleteResponse(BaseModel):
     success: bool = Field(..., description="Whether the operation was successful")
     message: str = Field(..., description="Response message")
     data: Optional[Dict[str, Any]] = Field(None, description="Response data")
-    completion_summary: Optional[Dict[str, Any]] = Field(None, description="Completion summary") 
+    completion_summary: Optional[Dict[str, Any]] = Field(None, description="Completion summary")
+
+# User Authentication Schemas
+class UserCreate(BaseModel):
+    """Schema for user registration"""
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., min_length=8, description="User password (min 8 characters)")
+    first_name: str = Field(..., min_length=1, max_length=100, description="User first name")
+    last_name: str = Field(..., min_length=1, max_length=100, description="User last name")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "john.doe@example.com",
+                "password": "securepassword123",
+                "first_name": "John",
+                "last_name": "Doe"
+            }
+        }
+
+class UserLogin(BaseModel):
+    """Schema for user login"""
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "john.doe@example.com",
+                "password": "securepassword123"
+            }
+        }
+
+class UserUpdate(BaseModel):
+    """Schema for updating user profile"""
+    first_name: Optional[str] = Field(None, min_length=1, max_length=100, description="User first name")
+    last_name: Optional[str] = Field(None, min_length=1, max_length=100, description="User last name")
+    email: Optional[EmailStr] = Field(None, description="User email address")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "first_name": "John",
+                "last_name": "Smith",
+                "email": "john.smith@example.com"
+            }
+        }
+
+class UserResponse(BaseModel):
+    """Schema for user response (without sensitive data)"""
+    id: str = Field(..., description="User ID")
+    email: str = Field(..., description="User email")
+    first_name: str = Field(..., description="User first name")
+    last_name: str = Field(..., description="User last name")
+    is_active: bool = Field(..., description="Whether user account is active")
+    is_verified: bool = Field(..., description="Whether user email is verified")
+    created_at: datetime = Field(..., description="Account creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    
+    class Config:
+        from_attributes = True
+
+class UserProfileResponse(BaseModel):
+    """Schema for user profile with statistics"""
+    user_id: str = Field(..., description="User ID")
+    total_chats: int = Field(..., description="Total number of chat interactions")
+    quizzes_taken: int = Field(..., description="Total number of quizzes taken")
+    day_streak: int = Field(..., description="Current day streak")
+    days_active: int = Field(..., description="Total days active")
+    last_activity_date: date = Field(..., description="Last activity date")
+    streak_start_date: date = Field(..., description="Start date of current streak")
+    created_at: datetime = Field(..., description="Profile creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    
+    class Config:
+        from_attributes = True
+
+class UserProfileUpdate(BaseModel):
+    """Schema for updating user profile statistics"""
+    total_chats: Optional[int] = Field(None, ge=0, description="Total number of chat interactions")
+    quizzes_taken: Optional[int] = Field(None, ge=0, description="Total number of quizzes taken")
+    day_streak: Optional[int] = Field(None, ge=0, description="Current day streak")
+    days_active: Optional[int] = Field(None, ge=0, description="Total days active")
+
+class AuthResponse(BaseModel):
+    """Schema for authentication response"""
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field(default="bearer", description="Token type")
+    user: UserResponse = Field(..., description="User information")
+    profile: Optional[UserProfileResponse] = Field(None, description="User profile statistics")
+
+class PasswordChange(BaseModel):
+    """Schema for password change"""
+    current_password: str = Field(..., description="Current password")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "current_password": "oldpassword123",
+                "new_password": "newpassword456"
+            }
+        }
+
+class PasswordReset(BaseModel):
+    """Schema for password reset request"""
+    email: EmailStr = Field(..., description="User email address")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "john.doe@example.com"
+            }
+        }
+
+class PasswordResetConfirm(BaseModel):
+    """Schema for password reset confirmation"""
+    token: str = Field(..., description="Password reset token")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "token": "reset_token_here",
+                "new_password": "newpassword456"
+            }
+        } 

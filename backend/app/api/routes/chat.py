@@ -6,9 +6,11 @@ import uuid
 import time
 import json
 from fastapi.responses import StreamingResponse
+import asyncio
 
 
 from app.core.config import settings
+from app.core.auth import get_current_active_user
 from app.utils.session import (
     create_session,
     get_session,
@@ -33,6 +35,7 @@ def get_chat_service() -> ChatService:
 @router.post("/message")
 async def process_message(
     request: ChatMessageRequest,
+    current_user: dict = Depends(get_current_active_user),
     chat_service: ChatService = Depends(get_chat_service)
 ) -> Dict[str, Any]:
     """Process a chat message and return the response"""
@@ -43,6 +46,7 @@ async def process_message(
         # Step 1: ChatService instantiation timing
         step1_start = time.time()
         print(f"   📋 Step 1: ChatService instantiation...")
+        
         # ChatService is already instantiated via dependency injection
         step1_time = time.time() - step1_start
         print(f"   ✅ Step 1 completed in {step1_time:.3f}s")
@@ -52,7 +56,8 @@ async def process_message(
         print(f"   🤖 Step 2: Processing message with ChatService...")
         response = await chat_service.process_message(
             query=request.query,
-            session_id=request.session_id
+            session_id=request.session_id,
+            user_id=current_user["id"]
         )
         step2_time = time.time() - step2_start
         print(f"   ✅ Step 2 completed in {step2_time:.3f}s (ChatService processing)")
@@ -72,15 +77,6 @@ async def process_message(
         step3_time = time.time() - step3_start
         print(f"   ✅ Step 3 completed in {step3_time:.3f}s (Response validation)")
         
-        # Total timing
-        total_time = time.time() - start_time
-        print(f"🏁 CHAT ENDPOINT COMPLETED in {total_time:.3f}s")
-        print(f"   📊 Breakdown:")
-        print(f"      - Step 1 (ChatService): {step1_time:.3f}s ({(step1_time/total_time)*100:.1f}%)")
-        print(f"      - Step 2 (Processing): {step2_time:.3f}s ({(step2_time/total_time)*100:.1f}%)")
-        print(f"      - Step 3 (Validation): {step3_time:.3f}s ({(step3_time/total_time)*100:.1f}%)")
-        print(f"      - Total: {total_time:.3f}s")
-        
         return response
         
     except HTTPException:
@@ -94,6 +90,7 @@ async def process_message(
 @router.post("/message/stream")
 async def process_message_streaming(
     request: ChatMessageRequest,
+    current_user: dict = Depends(get_current_active_user),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """Process a chat message with streaming response for better UX"""
@@ -101,16 +98,68 @@ async def process_message_streaming(
     print(f"\n🚀 CHAT STREAMING ENDPOINT STARTED: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
     
     try:
-        # Use the new direct OpenAI streaming implementation
-        print(f"   🤖 Using new direct OpenAI streaming...")
+        # Step 1: Get session and chat history (single fetch)
+        print(f"   📋 Step 1: Getting session and chat history...")
+        session = await get_session(request.session_id)
+        if not session:
+            session = await create_session(request.session_id)
+            if not session:
+                raise HTTPException(status_code=500, detail="Failed to create session for streaming")
         
-        # Get the streaming response from the new function
+        chat_history = session.get("chat_history", [])
+        
+        # Step 2: Get streaming response from LLM (single LLM call)
+        print(f"   🔄 Step 2: Getting streaming response from LLM...")
         streaming_response = await money_mentor_function.process_and_stream(
             query=request.query,
-            session_id=request.session_id
+            session_id=request.session_id,
+            user_id=current_user["id"],
+            skip_background_tasks=True,  # Skip background tasks in MoneyMentorFunction
+            pre_fetched_session=session,  # Pass pre-fetched session to avoid duplicate fetch
+            pre_fetched_history=chat_history  # Pass pre-fetched history to avoid duplicate fetch
         )
         
-        return streaming_response
+        # Step 3: Create a wrapper that collects the full response for background tasks
+        print(f"   🔧 Step 3: Creating response wrapper for background tasks...")
+        
+        async def wrapped_streaming_response():
+            collected_response = []
+            
+            # Get the original generator from the streaming response
+            original_generator = streaming_response.body_iterator
+            
+            # Collect and yield tokens
+            async for token in original_generator:
+                collected_response.append(token.decode('utf-8'))
+                yield token
+            
+            # After streaming is complete, handle background tasks
+            full_response = ''.join(collected_response)
+            
+            # Handle background tasks with the complete response
+            asyncio.create_task(chat_service._handle_background_tasks_only(
+                query=request.query,
+                session_id=request.session_id,
+                user_id=current_user["id"],
+                response_message=full_response,
+                session=session,
+                chat_history=chat_history
+            ))
+        
+        # Return the wrapped streaming response
+        final_response = StreamingResponse(
+            wrapped_streaming_response(),
+            media_type="text/plain",
+            headers=streaming_response.headers
+        )
+        
+        total_time = time.time() - start_time
+        print(f"🏁 CHAT STREAMING ENDPOINT COMPLETED in {total_time:.3f}s")
+        print(f"   ✅ Single LLM call with true streaming")
+        print(f"   ✅ Background tasks handled after streaming completes")
+        print(f"   ✅ No duplicate operations or database conflicts")
+        
+        return final_response
         
     except Exception as e:
         total_time = time.time() - start_time
@@ -137,6 +186,7 @@ async def process_message_streaming(
 @router.get("/history/{session_id}")
 async def get_chat_history(
     session_id: str,
+    current_user: dict = Depends(get_current_active_user),
     chat_service: ChatService = Depends(get_chat_service)
 ) -> Dict[str, Any]:
     """Get chat history for a session"""
@@ -160,7 +210,10 @@ async def get_chat_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/history/{session_id}")
-async def clear_chat_history(session_id: str):
+async def clear_chat_history(
+    session_id: str,
+    current_user: dict = Depends(get_current_active_user)
+):
     """Clear chat history for a session"""
     try:
         session = await get_session(session_id)

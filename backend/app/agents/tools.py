@@ -256,14 +256,20 @@ class SessionManagerTool(BaseTool):
     description: str = "Manages user session data including conversation history and preferences"
     
     class ArgsSchema(BaseModel):
-        user_id: str = Field(..., description="User ID")
         action: str = Field(..., description="Action to perform (get/update)")
         data: Optional[Dict[str, Any]] = Field(None, description="Data to update")
     
     supabase: Client = Field(default_factory=get_supabase)
     
-    async def _run(self, user_id: str, action: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def _run(self, action: str, data: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
         try:
+            if not user_id:
+                return {
+                    "success": False,
+                    "error": "User ID is required",
+                    "details": "User ID must be provided for session management"
+                }
+                
             if action == "get":
                 result = self.supabase.table('sessions').select('*').eq('user_id', user_id).execute()
                 if not result.data:
@@ -334,14 +340,20 @@ class ProgressTrackerTool(BaseTool):
     description: str = "Tracks and analyzes user learning progress"
     
     class ArgsSchema(BaseModel):
-        user_id: str = Field(..., description="User ID")
         action: str = Field(..., description="Action to perform (get/update)")
         data: Optional[Dict[str, Any]] = Field(None, description="Progress data to update")
     
     supabase: Client = Field(default_factory=get_supabase)
     
-    async def _run(self, user_id: str, action: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def _run(self, action: str, data: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
         try:
+            if not user_id:
+                return {
+                    "success": False,
+                    "error": "User ID is required",
+                    "details": "User ID must be provided for progress tracking"
+                }
+                
             if action == "get":
                 result = self.supabase.table('user_progress').select('*').eq('user_id', user_id).execute()
                 return {

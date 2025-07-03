@@ -85,10 +85,12 @@ class HybridMemoryManager:
             # 1. Get current session and chat history
             session = await self._get_session(user_id)
             if not session:
-                logger.error(f"Session for user {user_id} not found")
+                logger.warning(f"Session for user {user_id} not found - this is normal for new sessions")
                 return
             
-            chat_history = session.get("chat_history", [])
+            # Get chat history from session_data JSONB field
+            session_data = session.get("session_data", {})
+            chat_history = session_data.get("chat_history", [])
             
             # 2. Add new message to chat history
             chat_history.append(message)
@@ -105,7 +107,7 @@ class HybridMemoryManager:
                 chat_history = chat_history[-4:]  # Keep only last 4 messages
             
             # 4. Update user_sessions with new chat history
-            await self._update_session(user_id, {"chat_history": chat_history})
+            await self._update_session(user_id, {"session_data": {"chat_history": chat_history}})
             
             # 5. COMMENTED OUT: Vector DB storage (causing performance bottleneck)
             # if moved_messages:
@@ -119,21 +121,51 @@ class HybridMemoryManager:
             logger.error(f"Failed to add message to optimized memory: {e}")
     
     async def _get_session(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get session from user_sessions table by user_id"""
+        """Get session from user_sessions table by user_id or session_id"""
         try:
+            # First try to find by user_id
             result = supabase.table("user_sessions").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-            return result.data[0] if result.data else None
+            if result.data:
+                return result.data[0]
+            
+            # If not found by user_id, try to find by session_id in session_data JSON
+            # The session_id is stored in the session_data JSONB field
+            result = supabase.table("user_sessions").select("*").execute()
+            if result.data:
+                for session in result.data:
+                    session_data = session.get("session_data", {})
+                    if session_data.get("session_id") == user_id:
+                        return session
+            
+            return None
         except Exception as e:
             logger.error(f"Failed to get session: {e}")
             return None
     
     async def _update_session(self, user_id: str, data: Dict[str, Any]):
-        """Update session in user_sessions table by user_id"""
+        """Update session in user_sessions table by user_id or session_id"""
         try:
             data["updated_at"] = datetime.now(timezone.utc).isoformat()
+            
+            # First try to update by user_id
             result = supabase.table("user_sessions").update(data).eq("user_id", user_id).execute()
-            if not result.data:
-                raise ValueError(f"Failed to update session for user {user_id}")
+            if result.data:
+                return
+            
+            # If not found by user_id, try to find and update by session_id in session_data JSON
+            # Get all sessions and find the one with matching session_id
+            all_sessions = supabase.table("user_sessions").select("*").execute()
+            if all_sessions.data:
+                for session in all_sessions.data:
+                    session_data = session.get("session_data", {})
+                    if session_data.get("session_id") == user_id:
+                        # Update this session
+                        result = supabase.table("user_sessions").update(data).eq("id", session["id"]).execute()
+                        if result.data:
+                            return
+                        break
+            
+            raise ValueError(f"Failed to update session for user/session {user_id}")
         except Exception as e:
             logger.error(f"Failed to update session: {e}")
             raise
@@ -214,7 +246,9 @@ class HybridMemoryManager:
             if not session:
                 return []
             
-            chat_history = session.get("chat_history", [])
+            # Get chat history from session_data JSONB field
+            session_data = session.get("session_data", {})
+            chat_history = session_data.get("chat_history", [])
             
             messages = []
             for msg in chat_history:

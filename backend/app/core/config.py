@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_KEY: str
     
+    # Authentication Configuration
+    SECRET_KEY: str = "your-secret-key-here-change-in-production"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days00
+    
     # Redis Settings
     REDIS_URL: str = "redis://localhost:6379"
     

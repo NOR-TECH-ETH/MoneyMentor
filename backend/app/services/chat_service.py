@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime, timezone
 import uuid
@@ -25,7 +25,8 @@ class ChatService:
     async def process_message(
         self,
         query: str,
-        session_id: str
+        session_id: str,
+        user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Process a chat message and return the response with optimized background processing"""
         service_start_time = time.time()
@@ -38,7 +39,8 @@ class ChatService:
             session = await get_session(session_id)
             if not session:
                 try:
-                    session = await create_session(session_id)
+                    session = await create_session()
+                    session_id = session["session_id"]  # Update session_id to use generated one
                     if not session:
                         raise HTTPException(status_code=500, detail="Failed to create session")
                     logger.info(f"Created new session: {session_id}")
@@ -58,23 +60,25 @@ class ChatService:
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
-            user_id = session.get("user_id", session_id)
+            # Use provided user_id or fall back to session user_id or session_id
+            user_id = user_id or session.get("user_id", session_id)
             
-            # OPTIMIZATION: Pass empty chat_history to let CrewAI fetch it in parallel
-            # This allows CrewAI to run chat history fetching + content retrieval + calculation detection simultaneously
-            chat_history = []  # Empty - will be fetched in parallel by CrewAI
+            # Get chat history from session to pass to MoneyMentorFunction
+            chat_history = session.get("chat_history", [])
             
             step2_time = time.time() - step2_start
             print(f"         ✅ Step 1.2 completed in {step2_time:.3f}s (Essential memory operations - OPTIMIZED)")
             
-            # Step 3: CrewAI processing with PARALLEL optimization (MAIN BOTTLENECK - must be synchronous)
+            # Step 3: OpenAI processing with PARALLEL optimization (MAIN BOTTLENECK - must be synchronous)
             step3_start = time.time()
             print(f"         🤖 Step 1.3: OpenAI processing with PARALLEL optimization...")
             try:
                 response = await money_mentor_function.process_message(
                     message=query,
-                    chat_history=chat_history,  # Empty - will be fetched in parallel
-                    session_id=session_id
+                    chat_history=chat_history,  # Pass the already-fetched chat history
+                    session_id=session_id,
+                    user_id=user_id,
+                    skip_session_fetch=True  # Tell MoneyMentorFunction to skip session fetching
                 )
                 
                 # Ensure response is a dictionary
@@ -103,37 +107,42 @@ class ChatService:
             # Add calculation detection to response
             response["is_calculation"] = self._is_calculation_request(query)
             
-            # Step 5: Background tasks (ALL NON-CRITICAL OPERATIONS)
+            # Step 5: ALL background tasks (NONE are critical for immediate response)
             step5_start = time.time()
-            print(f"         🔄 Step 1.5: Background tasks (ALL NON-CRITICAL OPERATIONS)...")
+            print(f"         🔄 Step 1.5: ALL background tasks (NONE critical for response)...")
             
-            # Create all background tasks without waiting
+            # ALL tasks are background - user gets response immediately
             background_tasks = []
             
-            # Background Task 1: Memory operations
-            background_tasks.append(self._background_memory_operations(
+            # Background Task 1: Chat history updates (for future context)
+            background_tasks.append(self._background_chat_history(
                 session_id, user_id, user_message, response["message"]
             ))
             
-            # Background Task 2: Progress updates
+            # Background Task 2: Progress updates (if needed)
             if response.get("progress"):
                 background_tasks.append(self._background_progress_update(session_id, response["progress"]))
             
-            # Background Task 3: Quiz handling
+            # Background Task 3: Quiz handling (if needed)
             if response.get("quiz"):
                 background_tasks.append(self._background_quiz_handling(session_id, response["quiz"]))
             
-            # Background Task 4: Analytics and logging
+            # Background Task 4: Analytics and logging (with aggressive timeouts)
             background_tasks.append(self._background_analytics(
                 user_id, session_id, query, response["message"]
             ))
             
-            # Fire-and-forget all background tasks
+            # Background Task 5: Hybrid memory operations (vector DB - very expensive)
+            background_tasks.append(self._background_hybrid_memory(
+                user_id, session_id, user_message, response["message"]
+            ))
+            
+            # Fire-and-forget ALL background tasks
             for task in background_tasks:
                 asyncio.create_task(task)
             
             step5_time = time.time() - step5_start
-            print(f"         ✅ Step 1.5 completed in {step5_time:.3f}s (Background tasks - OPTIMIZED)")
+            print(f"         ✅ Step 1.5 completed in {step5_time:.3f}s (ALL background tasks - user gets response immediately)")
             
             # Total ChatService timing
             service_total_time = time.time() - service_start_time
@@ -161,16 +170,13 @@ class ChatService:
                 detail=f"Failed to process message: {str(e)}"
             )
     
-    async def _background_memory_operations(self, session_id: str, user_id: str, user_message: Dict, assistant_message: str):
-        """Background memory operations - fire and forget"""
+    async def _background_chat_history(self, session_id: str, user_id: str, user_message: Dict, assistant_message: str):
+        """Background chat history updates - for future context"""
         try:
-            # Add user message to chat history
+            # Add user message to chat history (CRITICAL - needed for context)
             await add_chat_message(session_id, user_message)
             
-            # Add user message to hybrid memory
-            await hybrid_memory_manager.add_to_memory(user_message, user_id, session_id)
-            
-            # Add assistant response to chat history
+            # Add assistant response to chat history (CRITICAL - needed for context)
             assistant_msg = {
                 "role": "assistant",
                 "content": assistant_message,
@@ -178,16 +184,13 @@ class ChatService:
             }
             await add_chat_message(session_id, assistant_msg)
             
-            # Add assistant response to hybrid memory
-            await hybrid_memory_manager.add_to_memory(assistant_msg, user_id, session_id)
-            
-            logger.info(f"Background memory operations completed for session {session_id}")
+            logger.info(f"Background chat history completed for session {session_id}")
             
         except Exception as e:
-            logger.warning(f"Background memory operations failed for session {session_id}: {e}")
+            logger.warning(f"Background chat history failed for session {session_id}: {e}")
     
     async def _background_progress_update(self, session_id: str, progress: Dict[str, Any]):
-        """Background progress update - fire and forget"""
+        """Background progress update - for future context"""
         try:
             await update_progress(session_id, progress)
             logger.info(f"Background progress update completed for session {session_id}")
@@ -195,7 +198,7 @@ class ChatService:
             logger.warning(f"Background progress update failed for session {session_id}: {e}")
     
     async def _background_quiz_handling(self, session_id: str, quiz_data: Dict[str, Any]):
-        """Background quiz handling - fire and forget"""
+        """Background quiz handling - for future context"""
         try:
             quiz_id = str(uuid.uuid4())
             if isinstance(quiz_data, dict) and "questions" in quiz_data:
@@ -208,7 +211,7 @@ class ChatService:
             logger.warning(f"Background quiz handling failed for session {session_id}: {e}")
     
     async def _background_analytics(self, user_id: str, session_id: str, query: str, response: str):
-        """Background analytics and logging - fire and forget"""
+        """Background analytics and logging - for future context with aggressive timeout"""
         try:
             # Google Sheets logging with very short timeout
             chat_log_data = {
@@ -222,7 +225,7 @@ class ChatService:
             # Set very short timeout for Google Sheets logging
             await asyncio.wait_for(
                 self.sheets_service.log_chat_message(chat_log_data),
-                timeout=1.0  # Reduced from 2.0 to 1.0 seconds
+                timeout=0.5  # Reduced from 1.0 to 0.5 seconds
             )
             
             # Engagement tracking with shorter timeout
@@ -231,7 +234,7 @@ class ChatService:
             
             await asyncio.wait_for(
                 self.engagement_service.track_session_engagement(user_id, session_id),
-                timeout=1.5  # Reduced from 3.0 to 1.5 seconds
+                timeout=0.8  # Reduced from 1.5 to 0.8 seconds
             )
             
             logger.info(f"Background analytics completed for user {user_id}")
@@ -240,6 +243,36 @@ class ChatService:
             logger.warning(f"Background analytics timed out for user {user_id} - this is normal and doesn't affect the response")
         except Exception as e:
             logger.warning(f"Background analytics failed for user {user_id}: {e} - this doesn't affect the response")
+    
+    async def _background_hybrid_memory(self, user_id: str, session_id: str, user_message: Dict, assistant_message: str):
+        """Background hybrid memory operations - for future context with aggressive timeout"""
+        try:
+            # Add user message to hybrid memory with timeout
+            await asyncio.wait_for(
+                hybrid_memory_manager.add_to_memory(user_message, user_id, session_id),
+                timeout=0.3  # Very short timeout for vector DB operations
+            )
+            
+            # Add assistant response to hybrid memory with timeout
+            await asyncio.wait_for(
+                hybrid_memory_manager.add_to_memory(
+                    {
+                        "role": "assistant",
+                        "content": assistant_message,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    },
+                    user_id,
+                    session_id
+                ),
+                timeout=0.3  # Very short timeout for vector DB operations
+            )
+            
+            logger.info(f"Background hybrid memory operations completed for session {session_id}")
+            
+        except asyncio.TimeoutError:
+            logger.warning(f"Background hybrid memory operations timed out for session {session_id} - this is normal")
+        except Exception as e:
+            logger.warning(f"Background hybrid memory operations failed for session {session_id}: {e}")
     
     async def process_calculation_streaming(self, query: str, session_id: str):
         """Process calculation requests with streaming response for better UX"""
@@ -461,4 +494,56 @@ Estimates only. Verify with a certified financial professional."""
         elif any(word in message_lower for word in ['student', 'loan', 'borrow']):
             return 'student_loan'
         else:
-            return 'credit_card_payoff' 
+            return 'credit_card_payoff'
+    
+    async def _handle_background_tasks_only(
+        self,
+        query: str,
+        session_id: str,
+        user_id: str,
+        response_message: str,
+        session: Dict[str, Any],
+        chat_history: List[Dict[str, Any]]
+    ):
+        """Handle background tasks only (for streaming endpoint)"""
+        try:
+            # Create user message
+            user_message = {
+                "role": "user",
+                "content": query,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Create assistant message
+            assistant_message = {
+                "role": "assistant",
+                "content": response_message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # ALL background tasks (fire-and-forget)
+            background_tasks = []
+            
+            # Background Task 1: Chat history updates (for future context)
+            background_tasks.append(self._background_chat_history(
+                session_id, user_id, user_message, response_message
+            ))
+            
+            # Background Task 2: Analytics and logging (with aggressive timeouts)
+            background_tasks.append(self._background_analytics(
+                user_id, session_id, query, response_message
+            ))
+            
+            # Background Task 3: Hybrid memory operations (vector DB - very expensive)
+            background_tasks.append(self._background_hybrid_memory(
+                user_id, session_id, user_message, response_message
+            ))
+            
+            # Fire-and-forget ALL background tasks
+            for task in background_tasks:
+                asyncio.create_task(task)
+                
+            logger.info(f"Background tasks initiated for streaming session {session_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to handle background tasks for streaming: {e}") 

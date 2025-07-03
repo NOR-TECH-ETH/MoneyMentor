@@ -10,6 +10,7 @@ from app.services.google_sheets_service import GoogleSheetsService
 from app.services.content_service import ContentService
 from app.services.course_service import CourseService
 from app.core.database import get_supabase
+from app.core.auth import get_current_active_user
 from datetime import datetime
 from app.utils.session import get_session, create_session
 from langchain_openai import ChatOpenAI
@@ -31,7 +32,10 @@ course_llm = ChatOpenAI(
 )
 
 @router.post("/generate", response_model=QuizResponse)
-async def generate_quiz(request: QuizRequest):
+async def generate_quiz(
+    request: QuizRequest,
+    current_user: dict = Depends(get_current_active_user)
+):
     """Generate a quiz using CrewAI quiz master agent"""
     try:
         session = await get_session(request.session_id)
@@ -94,7 +98,10 @@ async def generate_quiz(request: QuizRequest):
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
 @router.post("/submit", response_model=Dict[str, Any])
-async def submit_quiz(quiz_batch: QuizSubmissionBatch):
+async def submit_quiz(
+    quiz_batch: QuizSubmissionBatch,
+    current_user: dict = Depends(get_current_active_user)
+):
     """
     Submit one or more quiz responses at once (for both micro and diagnostic quizzes)
     
@@ -137,7 +144,7 @@ async def submit_quiz(quiz_batch: QuizSubmissionBatch):
         
         for response in quiz_batch.responses:
             quiz_response_data = {
-                "user_id": quiz_batch.user_id,
+                "user_id": current_user["id"],  # Use user_id from token
                 "quiz_id": response["quiz_id"],
                 "topic": response["topic"],
                 "selected": response["selected_option"],
@@ -160,7 +167,7 @@ async def submit_quiz(quiz_batch: QuizSubmissionBatch):
             supabase.table('quiz_responses').insert(quiz_responses_batch).execute()
         
         # 3. Update user_progress table with aggregated stats
-        await _update_user_progress_from_batch(quiz_batch.user_id, quiz_batch.quiz_type, topic_stats)
+        await _update_user_progress_from_batch(current_user["id"], quiz_batch.quiz_type, topic_stats)
         
         # 4. Log to Google Sheets (for client access)
         if google_sheets_service.service:
@@ -169,12 +176,12 @@ async def submit_quiz(quiz_batch: QuizSubmissionBatch):
                 sheets_data = []
                 for response in quiz_batch.responses:
                     sheets_data.append({
-                        'user_id': quiz_batch.user_id,
+                        'user_id': current_user["id"],  # Use user_id from token
                         'quiz_id': response["quiz_id"],
                         'topic_tag': response["topic"],  # Updated to topic_tag
                         'selected_option': response["selected_option"],  # Updated to selected_option
                         'correct': response["correct"],
-                        'session_id': quiz_batch.session_id or quiz_batch.user_id  # Use session_id if provided
+                        'session_id': quiz_batch.session_id or current_user["id"]  # Use session_id if provided
                     })
                 
                 # Log to Google Sheets
@@ -196,7 +203,7 @@ async def submit_quiz(quiz_batch: QuizSubmissionBatch):
         correct_responses = sum(1 for r in quiz_batch.responses if r["correct"])
         overall_score = (correct_responses / total_responses * 100) if total_responses > 0 else 0
         
-        logger.info(f"Quiz submission(s) successful for user {quiz_batch.user_id}: {correct_responses}/{total_responses} correct")
+        logger.info(f"Quiz submission(s) successful for user {current_user['id']}: {correct_responses}/{total_responses} correct")
         
         # 6. Generate course recommendation for diagnostic quizzes only
         recommended_course_id = None
@@ -503,17 +510,19 @@ async def _update_user_progress_from_batch(user_id: str, quiz_type: str, topic_s
         logger.error(f"Failed to update user progress from batch: {e}")
         return False
 
-@router.get("/history/{user_id}")
-async def get_quiz_history(user_id: str):
+@router.get("/history")
+async def get_quiz_history(current_user: dict = Depends(get_current_active_user)):
     """Get user's quiz history and performance"""
     try:
-        # Create progress crew to analyze user performance
-        progress_crew = money_mentor_crew.create_progress_crew(user_id)
-        result = progress_crew.kickoff()
+        supabase = get_supabase()
+        
+        # Get quiz history for the user
+        result = supabase.table('quiz_responses').select('*').eq('user_id', current_user["id"]).order('created_at', desc=True).execute()
         
         return {
-            "user_id": user_id,
-            "progress_analysis": result
+            "user_id": current_user["id"],
+            "quiz_history": result.data,
+            "total_quizzes": len(result.data) if result.data else 0
         }
         
     except Exception as e:

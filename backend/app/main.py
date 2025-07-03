@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.routes import chat, quiz, calculation, progress, content, course, streaming_chat
+from app.api.routes import chat, quiz, calculation, progress, content, course, streaming_chat, user
 
 port = int(os.environ.get("PORT", 8080))
 # Log the allowed origins
@@ -33,6 +33,7 @@ app.include_router(progress.router, prefix="/api/progress", tags=["progress"])
 app.include_router(content.router, prefix="/api", tags=["Content Management"])
 app.include_router(course.router, prefix="/api/course", tags=["course"])
 app.include_router(streaming_chat.router, prefix="/api/streaming", tags=["streaming"])
+app.include_router(user.router, prefix="/api/user", tags=["user"])
 
 @app.get("/")
 async def root():

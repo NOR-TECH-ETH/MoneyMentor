@@ -18,7 +18,8 @@ _cache_lock = asyncio.Lock()
 async def create_session(session_id: str = None, user_id: str = "default_user") -> Dict[str, Any]:
     """Create a new session with caching"""
     try:
-        session_data = {
+        # Store in the correct format matching actual database schema
+        db_session_data = {
             "user_id": user_id,
             "chat_history": [],
             "quiz_history": [],
@@ -27,36 +28,37 @@ async def create_session(session_id: str = None, user_id: str = "default_user") 
             "updated_at": datetime.utcnow().isoformat()
         }
         
-        # If session_id is provided and looks like a UUID, use it
-        if session_id and len(session_id) == 36 and '-' in session_id:
-            session_data["session_id"] = session_id
-        else:
-            session_data["session_id"] = str(uuid.uuid4())
+        # Insert into database and get the generated id
+        result = supabase.table("user_sessions").insert(db_session_data).execute()
+        
+        if not result.data:
+            raise Exception("Failed to create session in database")
+        
+        # Get the created session with generated id
+        created_session = result.data[0]
+        actual_session_id = str(created_session["id"])  # Use the database id as session_id
+        
+        # Create session data in expected format
+        session_data = {
+            "session_id": actual_session_id,  # Use database id as session_id
+            "user_id": user_id,
+            "chat_history": [],
+            "quiz_history": [],
+            "progress": {},
+            "created_at": created_session["created_at"],
+            "updated_at": created_session["updated_at"]
+        }
         
         # Store in cache immediately
         async with _cache_lock:
-            _session_cache[session_data["session_id"]] = session_data
+            _session_cache[actual_session_id] = session_data
         
-        # OPTIMIZATION: Store in database synchronously for immediate availability
-        try:
-            supabase.table("user_sessions").insert(session_data).execute()
-            logger.info(f"Session created and stored in database: {session_data['session_id']}")
-        except Exception as db_error:
-            logger.warning(f"Failed to store session in database: {db_error}")
-            # Continue anyway since it's in cache
-            
+        logger.info(f"Session created and stored in database: {actual_session_id}")
         return session_data
         
     except Exception as e:
         logger.error(f"Failed to create session: {e}")
         raise
-
-async def _store_session_async(session_data: Dict[str, Any]):
-    """Store session in database asynchronously"""
-    try:
-        supabase.table("user_sessions").insert(session_data).execute()
-    except Exception as e:
-        logger.warning(f"Failed to store session in database: {e}")
 
 async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
     """Get session by ID with caching"""
@@ -68,14 +70,26 @@ async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
             if session_id_str in _session_cache:
                 return _session_cache[session_id_str]
         
-        # If not in cache, get from database
-        result = supabase.table("user_sessions").select("*").eq("session_id", session_id_str).single().execute()
+        # If not in cache, get from database using id column
+        result = supabase.table("user_sessions").select("*").eq("id", session_id_str).execute()
         
-        if result.data:
+        if result.data and len(result.data) > 0:
+            # Convert database format to expected session format
+            db_data = result.data[0]
+            session_data = {
+                "session_id": str(db_data["id"]),  # Use database id as session_id
+                "user_id": db_data.get("user_id"),
+                "chat_history": db_data.get("chat_history", []),
+                "quiz_history": db_data.get("quiz_history", []),
+                "progress": db_data.get("progress", {}),
+                "created_at": db_data.get("created_at"),
+                "updated_at": db_data.get("updated_at")
+            }
+            
             # Store in cache
             async with _cache_lock:
-                _session_cache[session_id_str] = result.data
-            return result.data
+                _session_cache[session_id_str] = session_data
+            return session_data
         
         return None
         
@@ -95,11 +109,22 @@ async def update_session(session_id: str, data: Dict[str, Any]) -> Dict[str, Any
                 updated_session = _session_cache[session_id]
             else:
                 # If not in cache, get from database first
-                result = supabase.table("user_sessions").select("*").eq("session_id", session_id).single().execute()
-                if result.data:
-                    updated_session = result.data
-                    updated_session.update(data)
-                    _session_cache[session_id] = updated_session
+                result = supabase.table("user_sessions").select("*").eq("id", session_id).execute()
+                if result.data and len(result.data) > 0:
+                    db_data = result.data[0]
+                    # Convert database format to session format
+                    session_data = {
+                        "session_id": str(db_data["id"]),
+                        "user_id": db_data.get("user_id"),
+                        "chat_history": db_data.get("chat_history", []),
+                        "quiz_history": db_data.get("quiz_history", []),
+                        "progress": db_data.get("progress", {}),
+                        "created_at": db_data.get("created_at"),
+                        "updated_at": db_data.get("updated_at")
+                    }
+                    session_data.update(data)
+                    _session_cache[session_id] = session_data
+                    updated_session = session_data
                 else:
                     raise ValueError(f"Session {session_id} not found")
         
@@ -115,9 +140,52 @@ async def update_session(session_id: str, data: Dict[str, Any]) -> Dict[str, Any
 async def _update_session_async(session_id: str, data: Dict[str, Any]):
     """Update session in database asynchronously"""
     try:
-        supabase.table("user_sessions").update(data).eq("session_id", session_id).execute()
+        # Update the session using id column
+        update_data = {
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        # Map the data to the correct database columns
+        if "chat_history" in data:
+            update_data["chat_history"] = data["chat_history"]
+        if "quiz_history" in data:
+            update_data["quiz_history"] = data["quiz_history"]
+        if "progress" in data:
+            update_data["progress"] = data["progress"]
+        
+        supabase.table("user_sessions").update(update_data).eq("id", session_id).execute()
     except Exception as e:
         logger.warning(f"Failed to update session in database: {e}")
+
+async def _store_session_async(session_data: Dict[str, Any]):
+    """Store session in database asynchronously"""
+    try:
+        # Store in the correct format matching actual database schema
+        db_session_data = {
+            "user_id": session_data.get("user_id", "default_user"),
+            "chat_history": session_data.get("chat_history", []),
+            "quiz_history": session_data.get("quiz_history", []),
+            "progress": session_data.get("progress", {}),
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        supabase.table("user_sessions").insert(db_session_data).execute()
+    except Exception as e:
+        logger.warning(f"Failed to store session in database: {e}")
+
+async def delete_session(session_id: str) -> bool:
+    """Delete session with cache cleanup"""
+    try:
+        # Remove from cache
+        async with _cache_lock:
+            _session_cache.pop(session_id, None)
+        
+        # Delete from database using id column
+        result = supabase.table("user_sessions").delete().eq("id", session_id).execute()
+        return bool(result.data)
+    except Exception as e:
+        logger.error(f"Failed to delete session: {e}")
+        raise
 
 async def add_chat_message(session_id: str, message: Dict[str, Any]) -> None:
     """Add a message to chat history with optimized caching"""
@@ -213,20 +281,6 @@ async def update_progress(session_id: str, progress_data: Dict[str, Any]) -> Non
         
     except Exception as e:
         logger.error(f"Failed to update progress: {e}")
-        raise
-
-async def delete_session(session_id: str) -> bool:
-    """Delete session with cache cleanup"""
-    try:
-        # Remove from cache
-        async with _cache_lock:
-            _session_cache.pop(session_id, None)
-        
-        # Delete from database
-        result = supabase.table("user_sessions").delete().eq("session_id", session_id).execute()
-        return bool(result.data)
-    except Exception as e:
-        logger.error(f"Failed to delete session: {e}")
         raise
 
 async def clear_session_cache():
