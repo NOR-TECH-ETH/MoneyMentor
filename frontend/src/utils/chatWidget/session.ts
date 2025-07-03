@@ -1,9 +1,19 @@
 import { v4 as uuidv4 } from 'uuid';
 import { STORAGE_KEYS } from '../../types';
+import Cookies from 'js-cookie';
 
 // Get environment variables
 // const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
 const BACKEND_URL = 'http://localhost:8000';
+
+// Helper to get token from cookies
+const getAuthToken = () => Cookies.get('auth_token');
+
+// Helper to add Authorization header if token exists
+const withAuth = (headers: Record<string, string> = {}) => {
+  const token = getAuthToken();
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+};
 export interface SessionIds {
   userId: string;
   sessionId: string;
@@ -34,7 +44,10 @@ export const initializeSession = (): SessionIds => {
 export const generateNewSession = async (): Promise<string> => {
   const response = await fetch(`${BACKEND_URL}/api/quiz/session/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    }
   });
   if (!response.ok) {
     throw new Error('Failed to create session');

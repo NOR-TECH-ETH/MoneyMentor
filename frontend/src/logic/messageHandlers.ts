@@ -1,7 +1,7 @@
 import { ChatMessage } from '../types';
 import { 
   ApiConfig,
-  sendChatMessage,
+  sendChatMessageStream,
   createSystemMessage,
   createUserMessage,
   createAssistantMessage,
@@ -92,36 +92,69 @@ export const handleSendMessage = async (
     );
     addMessage(userMessage);
 
-    const response = await sendChatMessage(apiConfig, messageText);
+    // Send to chat API using streaming
+    let fullResponse: any = null;
+    let streamingContent = '';
+    let assistantMessage: ChatMessage | null = null;
     
-    // Handle backend response
-    if (response.message) {
-      // Create assistant message
-      const assistantMessage = createAssistantMessage(
-        response.message,
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
-
+    await sendChatMessageStream(
+      apiConfig,
+      messageText,
+      (chunk: string) => {
+        // Update the streaming content
+        streamingContent += chunk;
+        
+        if (!assistantMessage) {
+          // Create the assistant message on first chunk
+          assistantMessage = createAssistantMessage(
+            streamingContent,
+            sessionIds.sessionId,
+            sessionIds.userId
+          );
+          addMessage(assistantMessage);
+        } else {
+          // Update the assistant message with streaming content
+          assistantMessage.content = streamingContent;
+          
+          // Update the message in the list
+          addMessage(assistantMessage);
+        }
+      },
+      (response: any) => {
+        fullResponse = response;
+      },
+      (error: Error) => {
+        console.error('Streaming error:', error);
+        const errorMessage = createSystemMessage(
+          'Network error. Please check your connection.',
+          sessionIds.sessionId,
+          sessionIds.userId
+        );
+        addMessage(errorMessage);
+      }
+    );
+    
+    // Handle backend response after streaming is complete
+    if (fullResponse && fullResponse.message) {
       // Check if this is a calculation response
-      if (response.is_calculation && response.calculation_result) {
+      if (fullResponse.is_calculation && fullResponse.calculation_result) {
         // Convert snake_case to camelCase for calculation result
-        const calculationResult = convertCalculationResult(response.calculation_result);
+        const calculationResult = convertCalculationResult(fullResponse.calculation_result);
 
         // Add calculation result to message metadata
-        assistantMessage.metadata = {
-          ...assistantMessage.metadata,
-          calculationResult: calculationResult
-        };
+        if (assistantMessage) {
+          assistantMessage.metadata = {
+            ...assistantMessage.metadata,
+            calculationResult: calculationResult
+          };
+        }
       }
-
-      addMessage(assistantMessage);
       
       // Handle quiz if present
-      if (response.quiz) {
-        setCurrentQuiz(response.quiz);
+      if (fullResponse.quiz) {
+        setCurrentQuiz(fullResponse.quiz);
       }
-    } else {
+    } else if (!fullResponse) {
       const errorMessage = createSystemMessage(
         'Sorry, I encountered an error. Please try again.',
         sessionIds.sessionId,

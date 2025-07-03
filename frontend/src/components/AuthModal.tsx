@@ -31,7 +31,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
         result = await loginUser(email, password);
       }
       if (result && (result.token || result.access_token)) {
-        Cookies.set('auth_token', result.token || result.access_token, { expires: 7 });
+        const token = result.token || result.access_token;
+        Cookies.set('auth_token', token, { expires: 7 });
         onAuthSuccess();
       } else {
         setError('No token returned.');

@@ -262,7 +262,7 @@
 .message {
   display: flex;
   flex-direction: column;
-  max-width: 80%;
+  max-width: 100%;
 }
 
 .message.user {
@@ -764,7 +764,7 @@
   }
 
   .message {
-    max-width: 85%;
+    max-width: 100%;
   }
 
   .message-content {
@@ -1094,7 +1094,7 @@
   }
 
   .message {
-    max-width: 90%;
+    max-width: 100%;
   }
 
   .message-content {
@@ -3838,4 +3838,433 @@
 .logout-btn svg {
   width: 20px;
   height: 20px;
+}
+
+/* Bot Message Markdown Styles */
+.bot-message {
+  position: relative;
+}
+
+.bot-message:hover .flex.justify-end.gap-1 {
+  opacity: 1;
+}
+
+.bot-message .markdown {
+  line-height: 1.6;
+}
+
+.bot-message .markdown h1 {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin: 1em 0 0.5em 0;
+  color: #333;
+}
+
+.chat-widget.dark .bot-message .markdown h1 {
+  color: #e5e7eb;
+}
+
+.bot-message .markdown h2 {
+  font-size: 1.3em;
+  font-weight: bold;
+  margin: 0.8em 0 0.4em 0;
+  color: #333;
+}
+
+.chat-widget.dark .bot-message .markdown h2 {
+  color: #e5e7eb;
+}
+
+.bot-message .markdown h3 {
+  font-size: 1.1em;
+  font-weight: bold;
+  margin: 0.6em 0 0.3em 0;
+  color: #333;
+}
+
+.chat-widget.dark .bot-message .markdown h3 {
+  color: #e5e7eb;
+}
+
+.bot-message .markdown p {
+  margin: 0.5em 0;
+}
+
+.bot-message .markdown ul, .bot-message .markdown ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.bot-message .markdown li {
+  margin: 0.2em 0;
+}
+
+.bot-message .markdown blockquote {
+  border-left: 4px solid #667eea;
+  margin: 0.5em 0;
+  padding-left: 1em;
+  color: #666;
+  font-style: italic;
+}
+
+.chat-widget.dark .bot-message .markdown blockquote {
+  color: #9ca3af;
+}
+
+.bot-message .markdown code {
+  background-color: #f3f4f6;
+  padding: 0.2em 0.4em;
+  border-radius: 0.25em;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.9em;
+}
+
+.chat-widget.dark .bot-message .markdown code {
+  background-color: #374151;
+  color: #e5e7eb;
+}
+
+.bot-message .markdown pre {
+  background-color: #f3f4f6;
+  padding: 1em;
+  border-radius: 0.5em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.chat-widget.dark .bot-message .markdown pre {
+  background-color: #374151;
+}
+
+.bot-message .markdown pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.bot-message .markdown a {
+  color: #667eea;
+  text-decoration: none;
+}
+
+.bot-message .markdown a:hover {
+  text-decoration: underline;
+}
+
+.bot-message .markdown strong {
+  font-weight: bold;
+}
+
+.bot-message .markdown em {
+  font-style: italic;
+}
+
+.bot-message .markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+
+.bot-message .markdown th,
+.bot-message .markdown td {
+  border: 1px solid #d1d5db;
+  padding: 0.5em;
+  text-align: left;
+}
+
+.chat-widget.dark .bot-message .markdown th,
+.chat-widget.dark .bot-message .markdown td {
+  border-color: #4b5563;
+}
+
+.bot-message .markdown th {
+  background-color: #f9fafb;
+  font-weight: bold;
+}
+
+.chat-widget.dark .bot-message .markdown th {
+  background-color: #374151;
+}
+
+/* Message Actions */
+.bot-message .flex.justify-end.gap-1 {
+  transition: opacity 0.2s ease;
+}
+
+.bot-message .flex.justify-end.gap-1 button {
+  color: #6b7280;
+  transition: all 0.2s ease;
+}
+
+.bot-message .flex.justify-end.gap-1 button:hover {
+  color: #374151;
+  background-color: #f3f4f6;
+}
+
+.chat-widget.dark .bot-message .flex.justify-end.gap-1 button {
+  color: #9ca3af;
+}
+
+.chat-widget.dark .bot-message .flex.justify-end.gap-1 button:hover {
+  color: #e5e7eb;
+  background-color: #374151;
+}
+
+/* Code Block Styling */
+.bot-message .bg-gray-100 {
+  background-color: #f3f4f6;
+  border-radius: 0.5em;
+  padding: 1em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+
+.chat-widget.dark .bot-message .bg-gray-100 {
+  background-color: #374151;
+}
+
+.bot-message .bg-gray-100 .text-xs {
+  font-size: 0.75rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.chat-widget.dark .bot-message .bg-gray-100 .text-xs {
+  color: #9ca3af;
+}
+
+.bot-message .bg-gray-100 button {
+  font-size: 0.75rem;
+  color: #6b7280;
+  transition: color 0.2s ease;
+}
+
+.bot-message .bg-gray-100 button:hover {
+  color: #374151;
+}
+
+.chat-widget.dark .bot-message .bg-gray-100 button {
+  color: #9ca3af;
+}
+
+.chat-widget.dark .bot-message .bg-gray-100 button:hover {
+  color: #e5e7eb;
+}
+
+.bot-message .bg-gray-100 pre {
+  margin: 0;
+  background: none;
+  padding: 0;
+}
+
+.bot-message .bg-gray-100 code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Tailwind-like utility classes for BotMessage */
+.bot-message .w-full {
+  width: 100%;
+}
+
+.bot-message .max-w-full {
+  max-width: 100%;
+}
+
+.bot-message .break-words {
+  word-break: break-word;
+}
+
+.bot-message .whitespace-pre-wrap {
+  white-space: pre-wrap;
+}
+
+.bot-message .flex {
+  display: flex;
+}
+
+.bot-message .justify-end {
+  justify-content: flex-end;
+}
+
+.bot-message .gap-1 {
+  gap: 0.25rem;
+}
+
+.bot-message .gap-2 {
+  gap: 0.5rem;
+}
+
+.bot-message .w-full {
+  width: 100%;
+}
+
+.bot-message .mt-2 {
+  margin-top: 0.5rem;
+}
+
+.bot-message .mb-2 {
+  margin-bottom: 0.5rem;
+}
+
+.bot-message .my-2 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.bot-message .p-1 {
+  padding: 0.25rem;
+}
+
+.bot-message .p-4 {
+  padding: 1rem;
+}
+
+.bot-message .px-1 {
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+
+.bot-message .py-0-5 {
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+}
+
+.bot-message .rounded {
+  border-radius: 0.25rem;
+}
+
+.bot-message .rounded-lg {
+  border-radius: 0.5rem;
+}
+
+.bot-message .text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.bot-message .text-xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.bot-message .font-mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.bot-message .font-medium {
+  font-weight: 500;
+}
+
+.bot-message .uppercase {
+  text-transform: uppercase;
+}
+
+.bot-message .opacity-0 {
+  opacity: 0;
+}
+
+.bot-message .group:hover .group-hover\:opacity-100 {
+  opacity: 1;
+}
+
+.bot-message .transition-opacity {
+  transition-property: opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.bot-message .transition-colors {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.bot-message .overflow-x-auto {
+  overflow-x: auto;
+}
+
+.bot-message .items-center {
+  align-items: center;
+}
+
+.bot-message .justify-between {
+  justify-content: space-between;
+}
+
+/* Dark mode variants */
+.chat-widget.dark .bot-message .dark\:prose-invert {
+  color: #e5e7eb;
+}
+
+.chat-widget.dark .bot-message .dark\:bg-gray-800 {
+  background-color: #1f2937;
+}
+
+.chat-widget.dark .bot-message .dark\:text-gray-400 {
+  color: #9ca3af;
+}
+
+.chat-widget.dark .bot-message .dark\:hover\:text-gray-300:hover {
+  color: #d1d5db;
+}
+
+.chat-widget.dark .bot-message .dark\:hover\:bg-gray-700:hover {
+  background-color: #374151;
+}
+
+/* Group hover functionality */
+.message.group:hover .bot-message .flex.justify-end.gap-1 {
+  opacity: 1;
+}
+
+/* Bot Message Actions - Original Button Styles */
+.bot-message .bot-message-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.bot-message .bot-action-btn {
+  background: #fff;
+  border: 1px solid #e0e7ef;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background 0.15s, box-shadow 0.15s, border 0.15s;
+  display: flex;
+  align-items: center;
+  color: #22223b;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+
+.bot-message .bot-action-btn:hover:not(:disabled) {
+  background: #e0e7ff;
+  border: 1px solid #b4b8d7;
+  color: #3b3b5b;
+}
+
+.bot-message .bot-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dark mode support for bot action buttons */
+.chat-widget.dark .bot-message .bot-action-btn {
+  background: #23243a;
+  border: 1px solid #35365a;
+  color: #f3f3fa;
+}
+
+.chat-widget.dark .bot-message .bot-action-btn:hover:not(:disabled) {
+  background: #2d2e4a;
+  border: 1px solid #667eea;
+  color: #aab4f7;
 }

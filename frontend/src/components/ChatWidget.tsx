@@ -10,7 +10,8 @@ import {
   Course,
   CoursePage,
   ChatSession,
-  UserProfile
+  UserProfile,
+  ChatResponse
 } from '../types';
 
 // Import ChatWidget components
@@ -63,7 +64,7 @@ import { useSessionState, useScrollToBottom, useSidebar, useProfile } from '../h
 import {
   // API utilities
   ApiConfig,
-  sendChatMessage,
+  sendChatMessageStream,
   generateDiagnosticQuiz,
 
   uploadFile,
@@ -536,15 +537,72 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       const newMessageCount = chatMessageCount + 1;
       setChatMessageCount(newMessageCount);
       
-      // Send to chat API
-      const response = await sendChatMessage(apiConfig, messageText);
+      // Send to chat API using streaming
+      let fullResponse: any = null;
+      let streamingContent = '';
+      let assistantMessageId = '';
       
-      // Handle backend response
+      // Create initial assistant message
+      const initialAssistantMessage = createAssistantMessage(
+        '',
+        sessionIds.sessionId,
+        sessionIds.userId
+      );
+      assistantMessageId = initialAssistantMessage.id;
+      
+      // Add the initial empty assistant message
+      setChatMessages(prev => [...prev, initialAssistantMessage]);
+      
+      await sendChatMessageStream(
+        apiConfig,
+        messageText,
+        (chunk: string) => {
+          // Update the streaming content
+          streamingContent += chunk;
+          
+          // Debug: Log streaming updates
+          console.log('UI update - chunk:', chunk, 'total:', streamingContent.length);
+          
+          // Update the assistant message with streaming content
+          setChatMessages(prev => {
+            const newMessages = [...prev];
+            const messageIndex = newMessages.findIndex(msg => msg.id === assistantMessageId);
+            
+            if (messageIndex !== -1) {
+              newMessages[messageIndex] = {
+                ...newMessages[messageIndex],
+                content: streamingContent
+              };
+            }
+            
+            return newMessages;
+          });
+        },
+        (response: any) => {
+          fullResponse = response;
+        },
+        (error: Error) => {
+          console.error('Streaming error:', error);
+          const errorMessage = createSystemMessage(
+            'Network error. Please check your connection.',
+            sessionIds.sessionId,
+            sessionIds.userId
+          );
+          setChatMessages(prev => [...prev, errorMessage]);
+        }
+      );
+      
+      if (!fullResponse) {
+        throw new Error('No response received');
+      }
+      
+      const response = fullResponse;
+      
+      // Handle backend response - only process metadata and quiz, don't create duplicate message
       if (response.message) {
         // Check if message contains calculation JSON
         const jsonMatch = response.message.match(/```json\n([\s\S]*?)\n```/);
-        let calculationResult = null;
-        let cleanMessage = response.message;
+        let calculationResult: any = null;
         
         if (jsonMatch) {
           try {
@@ -563,41 +621,38 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                 calculationDate: new Date().toISOString()
               }
             };
-            // Clean the message by removing the JSON block
-            cleanMessage = response.message.replace(/```json\n[\s\S]*?\n```/, '').trim();
-            // Remove the explanation paragraph that comes after the JSON
-            cleanMessage = cleanMessage.replace(/\n\nBased on the calculation results[\s\S]*$/, '').trim();
+            
+            // Update the last message (the streaming message) with calculation metadata
+            if (calculationResult) {
+              setChatMessages(prev => {
+                const newMessages = [...prev];
+                if (newMessages.length > 0) {
+                  const lastMessage = newMessages[newMessages.length - 1];
+                  if (lastMessage.type === 'assistant') {
+                    lastMessage.metadata = {
+                      ...lastMessage.metadata,
+                      calculationResult: calculationResult
+                    };
+                  }
+                }
+                return newMessages;
+              });
+            }
           } catch (error) {
             console.error('Error parsing calculation JSON:', error);
           }
         }
-
-        const assistantMessage = createAssistantMessage(
-          cleanMessage,
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-
-        // Add calculation result to metadata if present
-        if (calculationResult) {
-          assistantMessage.metadata = {
-            ...assistantMessage.metadata,
-            calculationResult: calculationResult
-          };
-        }
-
-        setChatMessages(prev => [...prev, assistantMessage]);
         
         // Handle quiz if present
         if (response.quiz) {
           setChatCurrentQuiz(response.quiz);
         }
       } else {
-      const errorMessage = createSystemMessage(
+        const errorMessage = createSystemMessage(
           'Sorry, I encountered an error. Please try again.',
-        sessionIds.sessionId,
-        sessionIds.userId
-      );
+          sessionIds.sessionId,
+          sessionIds.userId
+        );
         setChatMessages(prev => [...prev, errorMessage]);
       }
       
@@ -1036,12 +1091,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
               <div className="chat-messages-container">
         <div className="chat-messages">
                 {chatMessages.map((message) => (
-            <div key={message.id} className={`message ${message.type}`}>
+            <div key={message.id} className={`message ${message.type} group`}>
                       {message.type === 'assistant' ? (
                         <BotMessage
                           content={message.content}
-                          onCopy={undefined}
                           messageId={message.id}
+                          onCopy={() => {
+                            navigator.clipboard.writeText(message.content);
+                          }}
+                          isLastMessage={chatMessages.indexOf(message) === chatMessages.length - 1}
+                          isGenerating={chatIsLoading}
+                          showActions={true}
                         />
                       ) : (
               <div className="message-content">
@@ -1107,11 +1167,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   areAllQuestionsAnswered={(answers) => areAllQuestionsAnswered(answers)}
                 />
           )}
-                {chatIsLoading && (
-            <div className="message assistant">
-              <div className="message-content">Thinking...</div>
-            </div>
-          )}
+
           <div ref={messagesEndRef} />
         </div>
               </div>
@@ -1141,7 +1197,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
               <div className="chat-messages-container">
               <div className="chat-messages" style={{ paddingBottom: '20px', marginBottom: '20px' }}>
                 {learnMessages.map((message) => (
-                  <div key={message.id} className={`message ${message.type}`}>
+                  <div key={message.id} className={`message ${message.type} group`}>
                     <div className="message-content">
                       {formatMessageContent(message.content)}
                     </div>
@@ -1204,11 +1260,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                   areAllQuestionsAnswered={(answers) => areAllQuestionsAnswered(answers)}
                 />
                 )}
-                {learnIsLoading && (
-                  <div className="message assistant">
-                    <div className="message-content">Thinking...</div>
-                  </div>
-                )}
+
                 <div ref={messagesEndRef} />
               </div>
               </div>

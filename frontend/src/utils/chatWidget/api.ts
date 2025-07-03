@@ -47,10 +47,11 @@ export const sendChatMessage = async (
   config: ApiConfig,
   message: string
 ): Promise<ChatResponse> => {
-  const response = await fetch(`${BACKEND_URL}/api/chat/message`, {
+  const response = await fetch(`${BACKEND_URL}/api/chat/message/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...withAuth()
     },
     body: JSON.stringify({
       query: message,
@@ -65,13 +66,86 @@ export const sendChatMessage = async (
   return response.json();
 };
 
+// Streaming chat API call for raw token streaming
+export const sendChatMessageStream = async (
+  config: ApiConfig,
+  message: string,
+  onChunk: (chunk: string) => void,
+  onComplete: (fullResponse: ChatResponse) => void,
+  onError: (error: Error) => void
+): Promise<void> => {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/chat/message/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...withAuth()
+      },
+      body: JSON.stringify({
+        query: message,
+        session_id: config.sessionId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to send message: ${response.status} ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    const decoder = new TextDecoder();
+    let fullResponse = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) {
+        break;
+      }
+
+      // Decode the chunk - this is raw content from OpenAI streaming
+      const chunk = decoder.decode(value, { stream: true });
+      
+      // Add to full response
+      fullResponse += chunk;
+      
+      // Debug: Log chunks for development
+      if (chunk.trim()) {
+        console.log('Streaming chunk:', chunk);
+      }
+      
+      // Send the chunk to the UI for real-time updates
+      onChunk(chunk);
+    }
+
+    // Create final response object
+    const finalResponse: ChatResponse = {
+      message: fullResponse,
+      session_id: config.sessionId,
+      quiz: null
+    };
+
+    // Call completion handler
+    onComplete(finalResponse);
+
+  } catch (error) {
+    onError(error instanceof Error ? error : new Error('Unknown error'));
+  }
+};
+
 // Quiz API calls - Using port 3000
 export const initializeQuizSession = async (
   config: ApiConfig
 ): Promise<QuizSession> => {
   const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/session`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({ 
       userId: config.userId, 
       sessionId: config.sessionId 
@@ -89,7 +163,9 @@ export const initializeQuizSession = async (
 export const loadDiagnosticTest = async (
   apiUrl: string
 ): Promise<DiagnosticTest> => {
-  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/diagnostic`);
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/diagnostic`, {
+    headers: withAuth()
+  });
   
   if (!response.ok) {
     throw new Error('Failed to load diagnostic test');
@@ -105,7 +181,10 @@ export const completeDiagnosticTest = async (
 ): Promise<any> => {
   const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/complete-diagnostic`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({ 
       userId: config.userId, 
       sessionId: config.sessionId, 
@@ -137,6 +216,7 @@ export const logQuizAnswer = async (
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...withAuth()
     },
     body: JSON.stringify({
       user_id: config.userId,
@@ -164,7 +244,10 @@ export const getAvailableCourses = async (
 ): Promise<any> => {
   const response = await fetch(`${BACKEND_URL}/api/course/user/${config.userId}/sessions`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    }
   });
 
   if (!response.ok) {
@@ -181,7 +264,10 @@ export const startCourse = async (
 ): Promise<any> => {
   const response = await fetch(`${BACKEND_URL}/api/course/start`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({ 
       user_id: config.userId, 
       session_id: config.sessionId, 
@@ -203,7 +289,10 @@ export const navigateCoursePage = async (
 ): Promise<any> => {
   const response = await fetch(`${BACKEND_URL}/api/course/navigate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({ 
       user_id: config.userId,
       session_id: config.sessionId,
@@ -228,7 +317,10 @@ export const submitCourseQuiz = async (
 ): Promise<any> => {
   const response = await fetch(`${BACKEND_URL}/api/course/quiz/submit`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({ 
       user_id: config.userId,
       session_id: config.sessionId,
@@ -252,7 +344,10 @@ export const completeCourse = async (
 ): Promise<any> => {
   const response = await fetch(`${BACKEND_URL}/api/course/complete`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({ 
       user_id: config.userId,
       session_id: config.sessionId,
@@ -273,7 +368,10 @@ export const getCourseDetails = async (
 ): Promise<any> => {
   const response = await fetch(`${BACKEND_URL}/api/course/${courseId}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    }
   });
 
   if (!response.ok) {
@@ -295,6 +393,7 @@ export const uploadFile = async (
 
   const response = await fetch(`${BACKEND_TWO_URL}/api/content/upload`, {
     method: 'POST',
+    headers: withAuth(),
     body: formData,
   });
 
@@ -312,7 +411,10 @@ export const removeFile = async (
 ): Promise<void> => {
   const response = await fetch(`${BACKEND_TWO_URL}/api/content/remove`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({ 
       userId: config.userId, 
       sessionId: config.sessionId, 
@@ -331,7 +433,10 @@ export const startDiagnosticTest = async (
 ): Promise<any> => {
   const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/start-diagnostic`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({ 
       userId: config.userId, 
       sessionId: config.sessionId 
@@ -350,7 +455,9 @@ export const getDiagnosticQuestion = async (
   apiUrl: string,
   questionIndex: number
 ): Promise<any> => {
-  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/diagnostic/question/${questionIndex}`);
+  const response = await fetch(`${BACKEND_TWO_URL}/api/quiz/diagnostic/question/${questionIndex}`, {
+    headers: withAuth()
+  });
   
   if (!response.ok) {
     throw new Error('Failed to get diagnostic question');
@@ -377,7 +484,10 @@ export const generateDiagnosticQuiz = async (
 
   const response = await fetch(`${BACKEND_URL}/api/quiz/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify(requestBody)
   });
 
@@ -423,7 +533,10 @@ export const submitDiagnosticQuiz = async (
 
   const response = await fetch(`${BACKEND_URL}/api/quiz/submit`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
     body: JSON.stringify({
       user_id: userId,
       quiz_type: 'diagnostic',

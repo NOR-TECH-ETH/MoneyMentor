@@ -16,10 +16,17 @@
     "@mui/icons-material": "^7.2.0",
     "@mui/material": "^7.2.0",
     "clsx": "^2.0.0",
+    "highlight.js": "^11.11.1",
     "js-cookie": "^3.0.5",
+    "katex": "^0.16.22",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
