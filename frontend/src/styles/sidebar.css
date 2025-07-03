@@ -446,6 +446,16 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Override ChatWidget modal styles for sidebar profile modal */
+.profile-modal .modal-content {
+  width: 92% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  padding: 24px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
 .profile-modal-overlay.active .profile-modal {
   transform: scale(1) translateY(0);
 }
@@ -520,19 +530,21 @@
 }
 
 /* Modal Content */
-.modal-content {
+.profile-modal .modal-content {
   padding: 24px;
   max-height: 50vh;
   overflow-y: auto;
 }
 
+.profile-modal .modal-content::-webkit-scrollbar {
+  width: 6px;
+}
 
-
-.modal-content::-webkit-scrollbar-track {
+.profile-modal .modal-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.modal-content::-webkit-scrollbar-thumb {
+.profile-modal .modal-content::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.3);
   border-radius: 3px;
 }
