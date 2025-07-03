@@ -139,6 +139,42 @@
   z-index: 1001;
 }
 
+/* Mobile mode navigation - positioned below header */
+.mobile-mode-navigation {
+  display: none;
+  position: fixed;
+  top: 49px; /* Below the header */
+  left: 0;
+  right: 0;
+  z-index: 999;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: none;
+  box-shadow: none;
+}
+
+.chat-widget.dark .mobile-mode-navigation {
+  background: rgba(31, 41, 55, 0.95);
+  border: none;
+  box-shadow: none;
+}
+
+.mobile-mode-navigation .mode-navigation-glass {
+  justify-content: center;
+  max-width: 300px;
+  margin: 0 auto;
+  background: rgb(104 102 234 / 54%) !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Desktop-only class to hide desktop navigation on mobile */
+.desktop-only {
+  display: block;
+}
+
 .mode-navigation-glass {
   display: flex;
   align-items: center;
@@ -615,6 +651,8 @@
   .mode-navigation-glass {
     gap: 2px;
     padding: 4px;
+    background: rgb(104 102 234 / 54%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
   .mode-btn {
@@ -624,6 +662,82 @@
 
   .mode-icon {
     font-size: 14px;
+  }
+
+  /* Hide desktop navigation and show mobile navigation */
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-mode-navigation {
+    display: block;
+  }
+
+  /* Adjust content padding to account for mobile navigation */
+  .chat-widget-container.fullscreen .chat-widget {
+    padding-top: 97px; /* 49px header + 48px mobile navigation */
+  }
+
+  /* Adjust chat messages container for mobile navigation */
+  .chat-messages-container {
+    padding-top: 48px;
+  }
+
+  /* Position quiz progress below mobile navigation */
+  .quiz-progress {
+    position: fixed;
+    top: 97px; /* Below mobile navigation */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 998;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .chat-widget.dark .quiz-progress {
+    background: rgba(31, 41, 55, 0.95);
+  }
+
+  /* Position quiz progress below mobile navigation */
+  .quiz-progress {
+    position: fixed;
+    top: 97px; /* Below mobile navigation */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 998;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .chat-widget.dark .quiz-progress {
+    background: rgba(31, 41, 55, 0.95);
+  }
+
+  /* Position quiz progress below mobile navigation */
+  .quiz-progress {
+    position: fixed;
+    top: 97px; /* Below mobile navigation */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 998;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .chat-widget.dark .quiz-progress {
+    background: rgba(31, 41, 55, 0.95);
   }
 
   /* On small screens, move navigation to the right */
@@ -1059,6 +1173,8 @@
   .mode-navigation-glass {
     gap: 2px;
     padding: 3px;
+    background: rgb(104 102 234 / 54%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
   .mode-btn {
@@ -1069,6 +1185,20 @@
 
   .mode-icon {
     font-size: 12px;
+  }
+
+  /* Hide desktop navigation and show mobile navigation */
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-mode-navigation {
+    display: block;
+  }
+
+  /* Adjust content padding to account for mobile navigation */
+  .chat-widget-container.fullscreen .chat-widget {
+    padding-top: 97px; /* 49px header + 48px mobile navigation */
   }
 
   /* On small screens, move navigation to the right */
@@ -1127,6 +1257,8 @@
   .mode-navigation-glass {
     gap: 1px;
     padding: 2px;
+    background: rgb(104 102 234 / 54%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
   .mode-btn {
@@ -1137,6 +1269,20 @@
 
   .mode-icon {
     font-size: 11px;
+  }
+
+  /* Hide desktop navigation and show mobile navigation */
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-mode-navigation {
+    display: block;
+  }
+
+  /* Adjust content padding to account for mobile navigation */
+  .chat-widget-container.fullscreen .chat-widget {
+    padding-top: 97px; /* 49px header + 48px mobile navigation */
   }
 
   /* On extra small screens, move navigation to the right */
@@ -2418,6 +2564,10 @@
   cursor: pointer;
   padding: 0;
   outline: none;
+  position: fixed;
+  top: 111px;
+  right: 4px;
+  z-index: 998;
 }
 
 .quiz-history-dropdown {

@@ -959,7 +959,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
             )}
             <h3>💰 MoneyMentor</h3>
           </div>
-          <div className="mode-navigation-centered">
+          <div className="mode-navigation-centered desktop-only">
             <div className="mode-navigation-glass">
               <button
                 className={`mode-btn ${currentWindow === 'chat' ? 'active' : ''}`}
@@ -981,6 +981,26 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           <button onClick={logout} className="logout-btn" title="Logout">
             <LogoutRounded fontSize="small" />
           </button>
+        </div>
+
+        {/* Mobile Mode Navigation - positioned below header */}
+        <div className="mobile-mode-navigation">
+          <div className="mode-navigation-glass">
+            <button
+              className={`mode-btn ${currentWindow === 'chat' ? 'active' : ''}`}
+              onClick={() => setCurrentWindow('chat')}
+            >
+              <span className="mode-icon">💬</span>
+              <span className="mode-text">Chat</span>
+            </button>
+            <button 
+              className={`mode-btn ${currentWindow === 'learn' ? 'active' : ''}`}
+              onClick={() => setCurrentWindow('learn')}
+            >
+              <span className="mode-icon">🎓</span>
+              <span className="mode-text">Learn</span>
+            </button>
+          </div>
         </div>
 
         {/* Upload Progress Indicator Component */}
