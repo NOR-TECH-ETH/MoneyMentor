@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import AuthModal from './AuthModal';
+import Cookies from 'js-cookie';
+import { logout } from './AuthModal';
+import { LogoutRounded } from '@mui/icons-material';
 
 import { 
   ChatMessage, 
@@ -361,72 +365,41 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   position = 'fullscreen',
   theme = 'light'
 }) => {
-  // UI State
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState(!!Cookies.get('auth_token'));
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = Cookies.get('auth_token');
+      setIsAuthenticated(!!token);
+    };
+    checkAuth();
+    const interval = setInterval(checkAuth, 1000);
+    return () => clearInterval(interval);
+  }, []);
+  const handleAuthSuccess = () => setIsAuthenticated(true);
+
+  // --- All other hooks below ---
   const [isOpen, setIsOpen] = useState(false);
   const [activeMode, setActiveMode] = useState('chat');
-  
-  // Session State - using custom hook
   const { sessionIds, setSessionIds } = useSessionState();
-  
-  // Sidebar and Profile State
   const sidebarHook = useSidebar();
   const profileHook = useProfile();
-  
-  // Get current theme from user profile (overrides static theme prop)
   const currentTheme = profileHook.userProfile.preferences.theme;
-  
-  // Chat Sessions State
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(getMockChatSessions());
-  
-  // Session handlers
-  const handleSessionSelect = (sessionId: string) => {
-    console.log('Selected session:', sessionId);
-    // TODO: Load session messages and update current chat
-  };
-  
-  const handleNewChat = () => {
-    console.log('Creating new chat');
-    // TODO: Clear current messages and start new session
-  };
-  
-  
-  // Command autocomplete state
-
-  
-  // Message counter for chat window
+  const handleSessionSelect = (sessionId: string) => {};
+  const handleNewChat = () => {};
   const [chatMessageCount, setChatMessageCount] = useState(0);
-  // Quiz answer counters for chat window
   const [chatQuizTotalAnswered, setChatQuizTotalAnswered] = useState(0);
   const [chatQuizCorrectAnswered, setChatQuizCorrectAnswered] = useState(0);
-  // Quiz dropdown state and history
   const [showQuizDropdown, setShowQuizDropdown] = useState(false);
-  const [chatQuizHistory, setChatQuizHistory] = useState<any[]>([
-    // Test data to see if dropdown works
-    {
-      question: "What is compound interest?",
-      options: ["Interest on interest", "Simple interest", "Fixed interest", "Variable interest"],
-      correctAnswer: 0,
-      userAnswer: 0,
-      explanation: "Compound interest is interest earned on both the principal and the accumulated interest.",
-      topicTag: "investing"
-    }
-  ]);
-  
-  // Available commands
-   
-  
-  // Window management state
+  const [chatQuizHistory, setChatQuizHistory] = useState<any[]>([]);
   const [currentWindow, setCurrentWindow] = useState<'intro' | 'chat' | 'learn'>('intro');
-
-  // Window-specific state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [learnMessages, setLearnMessages] = useState<ChatMessage[]>([]);
   const [chatInputValue, setChatInputValue] = useState('');
   const [learnInputValue, setLearnInputValue] = useState('');
   const [chatIsLoading, setChatIsLoading] = useState(false);
   const [learnIsLoading, setLearnIsLoading] = useState(false);
-  
-  // Chat window specific state
   const [chatCurrentQuiz, setChatCurrentQuiz] = useState<QuizQuestion | null>(null);
   const [chatShowQuizFeedback, setChatShowQuizFeedback] = useState(false);
   const [chatLastQuizAnswer, setChatLastQuizAnswer] = useState<QuizFeedback | null>(null);
@@ -440,8 +413,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [chatShowCourseList, setChatShowCourseList] = useState(false);
   const [chatCourseQuiz, setChatCourseQuiz] = useState<CourseQuizState | null>(null);
   const [chatCourseQuizAnswers, setChatCourseQuizAnswers] = useState<CourseQuizAnswers>(initializeCourseQuizAnswers(0));
-  
-  // Learn window specific state
   const [learnCurrentQuiz, setLearnCurrentQuiz] = useState<QuizQuestion | null>(null);
   const [learnShowQuizFeedback, setLearnShowQuizFeedback] = useState(false);
   const [learnLastQuizAnswer, setLearnLastQuizAnswer] = useState<QuizFeedback | null>(null);
@@ -455,15 +426,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [learnShowCourseList, setLearnShowCourseList] = useState(false);
   const [learnCourseQuiz, setLearnCourseQuiz] = useState<CourseQuizState | null>(null);
   const [learnCourseQuizAnswers, setLearnCourseQuizAnswers] = useState<CourseQuizAnswers>(initializeCourseQuizAnswers(0));
-  
-  // File Upload State (only for chat window)
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>(initializeUploadProgress());
-  
-  // Custom hook for scroll to bottom
   const messagesEndRef = useScrollToBottom([chatMessages, learnMessages, currentWindow]);
-
-  // Create API config
   const apiConfig: ApiConfig = {
     apiUrl,
     userId: sessionIds.userId,
@@ -541,7 +506,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     }
   };
 
-
   // Window-specific input change handlers
   const handleChatInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -549,7 +513,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     
     // Chat window doesn't process commands - just update input value
   };
-
 
   // Window-specific message handlers
   const handleChatSendMessage = async (commandText?: string) => {
@@ -674,7 +637,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       setChatIsLoading(false);
     }
   };
-
 
   // Window-specific wrapper functions for components
   
@@ -960,6 +922,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     return () => window.removeEventListener('start-recommended-course', handler);
   }, [learnWindow]);
 
+  // --- Conditional rendering ---
+  if (!isAuthenticated) {
+    return <AuthModal isOpen={true} onAuthSuccess={handleAuthSuccess} />;
+  }
+
   return (
     <div className={`chat-app ${currentTheme}`}>
       {/* Sidebar - only show in chat window */}
@@ -1011,6 +978,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
             </div>
           </div>
           <div className="header-spacer"></div>
+          <button onClick={logout} className="logout-btn" title="Logout">
+            <LogoutRounded fontSize="small" />
+          </button>
         </div>
 
         {/* Upload Progress Indicator Component */}

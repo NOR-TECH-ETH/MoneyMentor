@@ -1,4 +1,5 @@
 import { ChatResponse, DiagnosticTest, QuizSession, QuizQuestion } from '../../types';
+import Cookies from 'js-cookie';
 
 export interface ApiConfig {
   apiUrl: string;
@@ -9,6 +10,37 @@ export interface ApiConfig {
 // const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
 const BACKEND_URL = 'http://localhost:8000';
 const BACKEND_TWO_URL = 'https://backend-2-647308514289.us-central1.run.app';
+
+// Helper to get token from cookies
+const getAuthToken = () => Cookies.get('auth_token');
+
+// Register API
+export const registerUser = async (email: string, password: string, first_name: string, last_name: string): Promise<any> => {
+  const response = await fetch(`${BACKEND_URL}/api/user/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, first_name, last_name })
+  });
+  if (!response.ok) throw new Error('Registration failed');
+  return response.json();
+};
+
+// Login API
+export const loginUser = async (email: string, password: string): Promise<any> => {
+  const response = await fetch(`${BACKEND_URL}/api/user/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  if (!response.ok) throw new Error('Login failed');
+  return response.json();
+};
+
+// Helper to add Authorization header if token exists
+const withAuth = (headers: Record<string, string> = {}) => {
+  const token = getAuthToken();
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+};
 
 // Chat API calls - Using port 8000
 export const sendChatMessage = async (
