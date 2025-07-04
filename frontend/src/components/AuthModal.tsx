@@ -16,6 +16,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
   const [lastName, setLastName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [keepLoggedIn, setKeepLoggedIn] = useState(true);
 
   if (!isOpen) return null;
 
@@ -32,7 +33,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
       }
       if (result && (result.token || result.access_token)) {
         const token = result.token || result.access_token;
-        Cookies.set('auth_token', token, { expires: 7 });
+        if (keepLoggedIn) {
+          Cookies.set('auth_token', token, { expires: 30 });
+        } else {
+          const expires = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+          Cookies.set('auth_token', token, { expires });
+        }
         onAuthSuccess();
       } else {
         setError('No token returned.');
@@ -84,6 +90,18 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
           required
           className="modal-input"
         />
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+          <input
+            type="checkbox"
+            id="keepLoggedIn"
+            checked={keepLoggedIn}
+            onChange={e => setKeepLoggedIn(e.target.checked)}
+            style={{ marginRight: 8 }}
+          />
+          <label htmlFor="keepLoggedIn" style={{ fontSize: 14 }}>
+            Keep me logged in
+          </label>
+        </div>
         {error && <div className="modal-error">{error}</div>}
         <button type="submit" disabled={loading} className="modal-btn">
           {loading ? 'Please wait...' : mode === 'login' ? 'Login' : 'Register'}

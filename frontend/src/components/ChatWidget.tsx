@@ -977,7 +977,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     return () => window.removeEventListener('start-recommended-course', handler);
   }, [learnWindow]);
 
-  // --- Conditional rendering ---
+  // Render AuthModal if not authenticated
   if (!isAuthenticated) {
     return <AuthModal isOpen={true} onAuthSuccess={handleAuthSuccess} />;
   }
