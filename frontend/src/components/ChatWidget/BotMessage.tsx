@@ -21,6 +21,19 @@ interface BotMessageProps {
   showActions?: boolean;
 }
 
+// Utility to fix LaTeX % comments in math blocks
+function fixLatexComments(markdown: string): string {
+  // Replace % with %\n only inside math blocks ($...$ or $$...$$)
+  // This is a simple regex and may not cover all edge cases, but works for most LLM output
+  return markdown.replace(/(\$[^\$\n]*?)%([^\n]*)/g, '$1%\n$2');
+}
+
+// Utility to escape $ before numbers (currency), so KaTeX doesn't treat as math
+function escapeCurrencyDollars(markdown: string): string {
+  // Replace $ with \\$ only when it is followed by a digit, but do not consume the digit
+  return markdown.replace(/(^|[^\\$\w])\$(?=\d)/g, '$1\\$');
+}
+
 const BotMessage: React.FC<BotMessageProps> = ({
   content,
   messageId,
@@ -126,7 +139,7 @@ const BotMessage: React.FC<BotMessageProps> = ({
               [remarkMath, { singleDollarTextMath: true }],
             ]}
             rehypePlugins={[
-              rehypeKatex,
+              [rehypeKatex, { strict: 'ignore' }],
               [
                 rehypeHighlight,
                 {
@@ -141,7 +154,7 @@ const BotMessage: React.FC<BotMessageProps> = ({
               p,
             }}
           >
-            {content}
+            {escapeCurrencyDollars(fixLatexComments(content))}
           </ReactMarkdown>
         ) : (
           <span className="whitespace-pre-wrap">{content}</span>
