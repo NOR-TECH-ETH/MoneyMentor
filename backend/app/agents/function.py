@@ -90,18 +90,20 @@ class MoneyMentorFunction:
         5. Be encouraging and supportive while maintaining accuracy
 
         Key guidelines:
-        - Always be educational and informative
+        - ALWAYS keep your responses extremely short, concise, and to the point
+        - NEVER exceed 400 words in your response
         - Use simple language to explain complex concepts
         - Provide practical, actionable advice when appropriate
         - Be encouraging and supportive
         - If a user asks for a calculation, use the available functions to help them
         - Always include a disclaimer that estimates are for educational purposes only
-        - Keep responses concise and precise (aim for 300-500 words maximum)
         - Focus on the most important information first
-        - Avoid unnecessary explanations or repetition
+        - Avoid unnecessary explanations, repetition, or filler
         - Use bullet points or numbered lists when appropriate for clarity
+        - If you can answer in fewer words, do so
+        - If a list or table is clearer, use it
 
-        Remember: You're here to educate and empower users with financial knowledge. Be helpful but concise."""
+        Remember: You're here to educate and empower users with financial knowledge. Be helpful but as brief as possible."""
         self.calc_service = CalculationService()
         self.content_service = ContentService()
 
@@ -246,13 +248,14 @@ class MoneyMentorFunction:
                 Calculation Result:
                 {json.dumps(calc_result, indent=2)}
 
-                Focus on:
-                • What the calculation means practically
-                • Key financial concepts involved
-                • One actionable insight
-                • Additional educational context
+                STRICT INSTRUCTIONS:
+                - Your response MUST be extremely short, concise, and never exceed 400 words.
+                - Focus only on the most important points and actionable insights.
+                - Use bullet points or numbered lists if possible.
+                - Avoid any unnecessary explanation, repetition, or filler.
+                - End with: Estimates only. Verify with a certified financial professional.
 
-                Keep it educational and comprehensive. End with: Estimates only. Verify with a certified financial professional."""
+                """
 
                 explanation_messages = [
                     {"role": "system", "content": self.system_prompt},
@@ -430,18 +433,19 @@ class MoneyMentorFunction:
                         calc_result = await self.calc_service.calculate(fn_name, fn_args)
                         
                         # Phase 2: Generate plain English explanation with financial literacy concepts
-                        explanation_prompt = f"""Using the plan below, provide a comprehensive explanation in plain English.
+                        explanation_prompt = f"""Using the plan below, provide a concise explanation in plain English.
 
                         Calculation Result:
                         {json.dumps(calc_result, indent=2)}
 
-                        Focus on:
-                        • What the calculation means practically
-                        • Key financial concepts involved
-                        • One actionable insight
-                        • Additional educational context
+                        STRICT INSTRUCTIONS:
+                        - Your response MUST be extremely short, concise, and never exceed 400 words.
+                        - Focus only on the most important points and actionable insights.
+                        - Use bullet points or numbered lists if possible.
+                        - Avoid any unnecessary explanation, repetition, or filler.
+                        - End with: Estimates only. Verify with a certified financial professional.
 
-                        Keep it educational and comprehensive. End with: Estimates only. Verify with a certified financial professional."""
+                        """
 
                         explanation_messages = [
                             {"role": "system", "content": self.system_prompt},
