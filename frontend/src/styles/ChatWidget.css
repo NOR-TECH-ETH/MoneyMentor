@@ -3863,10 +3863,11 @@
 
 .bot-message .markdown {
   line-height: 1.6;
+  font-size: 14px;
 }
 
 .bot-message .markdown h1 {
-  font-size: 1.5em;
+  font-size: 1.25em;
   font-weight: bold;
   margin: 1em 0 0.5em 0;
   color: #333;
@@ -3877,7 +3878,7 @@
 }
 
 .bot-message .markdown h2 {
-  font-size: 1.3em;
+  font-size: 1.1em;
   font-weight: bold;
   margin: 0.8em 0 0.4em 0;
   color: #333;
@@ -3888,7 +3889,7 @@
 }
 
 .bot-message .markdown h3 {
-  font-size: 1.1em;
+  font-size: 1em;
   font-weight: bold;
   margin: 0.6em 0 0.3em 0;
   color: #333;
@@ -3923,12 +3924,16 @@
   color: #9ca3af;
 }
 
+.bot-message .markdown code,
+.bot-message .markdown pre {
+  font-size: 13px;
+}
+
 .bot-message .markdown code {
   background-color: #f3f4f6;
   padding: 0.2em 0.4em;
   border-radius: 0.25em;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 0.9em;
 }
 
 .chat-widget.dark .bot-message .markdown code {
