@@ -262,6 +262,10 @@
 .message {
   display: flex;
   flex-direction: column;
+  max-width: 85%;
+}
+
+.message.assistant {
   max-width: 100%;
 }
 
@@ -764,6 +768,10 @@
   }
 
   .message {
+    max-width: 85%;
+  }
+
+  .message.assistant {
     max-width: 100%;
   }
 
@@ -1094,6 +1102,10 @@
   }
 
   .message {
+    max-width: 85%;
+  }
+
+  .message.assistant {
     max-width: 100%;
   }
 
@@ -4267,4 +4279,60 @@
   background: #2d2e4a;
   border: 1px solid #667eea;
   color: #aab4f7;
+}
+
+/* Currency and Math Expression Styles */
+.bot-message .currency-amount {
+  font-weight: 600;
+  color: #059669;
+  background: rgba(5, 150, 105, 0.1);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+.chat-widget.dark .bot-message .currency-amount {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+/* CSS-based currency highlighting */
+.bot-message p:not(.currency-amount) {
+  /* This ensures currency patterns in regular text get highlighted */
+}
+
+/* Target currency patterns in markdown content */
+.bot-message .markdown p {
+  /* Preserve original spacing and formatting */
+}
+
+.bot-message .math-expression {
+  font-family: 'KaTeX_Main', 'Times New Roman', serif;
+  line-height: 1.4;
+}
+
+.bot-message .math-expression.block {
+  display: block;
+  text-align: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.chat-widget.dark .bot-message .math-expression.block {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.bot-message .math-expression.inline {
+  display: inline;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.chat-widget.dark .bot-message .math-expression.inline {
+  background: rgba(255, 255, 255, 0.1);
 }

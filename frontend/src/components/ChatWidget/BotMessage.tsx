@@ -111,8 +111,9 @@ const BotMessage: React.FC<BotMessageProps> = ({
     }
   });
 
+  // Simple paragraph component that preserves original content
   const p = memo((props: any) => {
-    return <p className="whitespace-pre-wrap mb-2">{props?.children}</p>;
+    return <p className="whitespace-pre-wrap mb-2 leading-relaxed">{props?.children}</p>;
   });
 
   return (
