@@ -118,7 +118,7 @@ export const handleAccountDeletion = async (props: ProfileHandlersProps) => {
   
   try {
     // Mock account deletion - in real app this would call API
-    console.log('Account deletion requested');
+   
     
     // For now, just log out the user
     await onProfileUpdate({

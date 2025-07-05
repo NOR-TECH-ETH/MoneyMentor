@@ -7,8 +7,8 @@ export interface ApiConfig {
   sessionId: string;
 }
 
-// const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
+// const BACKEND_URL = 'http://localhost:8000';
 const BACKEND_TWO_URL = 'https://backend-2-647308514289.us-central1.run.app';
 
 // Helper to get token from cookies
@@ -113,9 +113,7 @@ export const sendChatMessageStream = async (
       fullResponse += chunk;
       
       // Debug: Log chunks for development
-      if (chunk.trim()) {
-        console.log('Streaming chunk:', chunk);
-      }
+    
       
       // Send the chunk to the UI for real-time updates
       onChunk(chunk);

@@ -26,7 +26,7 @@ export const ChatSessionsList: React.FC<ChatSessionsListProps> = ({
   const handleSessionDelete = (sessionId: string, event: React.MouseEvent) => {
     event.stopPropagation();
     // TODO: Implement session deletion
-    console.log('Delete session:', sessionId);
+    
   };
 
   return (

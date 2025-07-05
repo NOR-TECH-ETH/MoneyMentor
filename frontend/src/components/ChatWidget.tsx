@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import AuthModal from './AuthModal';
+import SessionExpiredModal from './SessionExpiredModal';
 import Cookies from 'js-cookie';
 import { logout } from './AuthModal';
 import { LogoutRounded } from '@mui/icons-material';
@@ -106,6 +107,7 @@ import {
 
 // Import session utilities
 import { getMockChatSessions } from '../utils/sessions';
+import { isSessionExpiredOrExpiringSoon, getSessionInfo } from '../utils/sessionUtils';
 
 // Import styles
 import '../styles/windows.css';
@@ -368,16 +370,46 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 }) => {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(!!Cookies.get('auth_token'));
+  const [showSessionExpiredModal, setShowSessionExpiredModal] = useState(false);
+  
   useEffect(() => {
     const checkAuth = () => {
       const token = Cookies.get('auth_token');
-      setIsAuthenticated(!!token);
+      const wasAuthenticated = isAuthenticated;
+      const isNowAuthenticated = !!token;
+      
+      // Check if session expired
+      if (wasAuthenticated && !isNowAuthenticated) {
+        setShowSessionExpiredModal(true);
+      }
+      
+      // Check if session is about to expire (within 5 minutes)
+      if (isNowAuthenticated) {
+        const sessionInfo = getSessionInfo();
+        if (sessionInfo && sessionInfo.timeUntilExpiry > 0 && sessionInfo.timeUntilExpiry <= 5 * 60 * 1000) {
+          // Session will expire within 5 minutes, show warning
+          setShowSessionExpiredModal(true);
+        }
+      }
+      
+      setIsAuthenticated(isNowAuthenticated);
     };
     checkAuth();
     const interval = setInterval(checkAuth, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated]);
+  
   const handleAuthSuccess = () => setIsAuthenticated(true);
+  
+  const handleSessionExpiredStayLoggedIn = () => {
+    setShowSessionExpiredModal(false);
+    setIsAuthenticated(true);
+  };
+  
+  const handleSessionExpiredLogout = () => {
+    setShowSessionExpiredModal(false);
+    setIsAuthenticated(false);
+  };
 
   // --- All other hooks below ---
   const [isOpen, setIsOpen] = useState(false);
@@ -560,8 +592,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           // Update the streaming content
           streamingContent += chunk;
           
-          // Debug: Log streaming updates
-          console.log('UI update - chunk:', chunk, 'total:', streamingContent.length);
+         
           
           // Update the assistant message with streaming content
           setChatMessages(prev => {
@@ -982,6 +1013,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     return <AuthModal isOpen={true} onAuthSuccess={handleAuthSuccess} />;
   }
 
+
+
   return (
     <div className={`chat-app ${currentTheme}`}>
       {/* Sidebar - only show in chat window */}
@@ -1001,6 +1034,15 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       )}
 
       <div className={`chat-widget ${currentTheme} ${position}`}>
+        {/* Session Expired Modal - rendered inside chat widget */}
+        {showSessionExpiredModal && (
+          <SessionExpiredModal
+            isOpen={showSessionExpiredModal}
+            onStayLoggedIn={handleSessionExpiredStayLoggedIn}
+            onLogout={handleSessionExpiredLogout}
+          />
+        )}
+        
         <div className="chat-header">
           <div className="header-left">
             {/* SidebarToggle - only show in chat window */}

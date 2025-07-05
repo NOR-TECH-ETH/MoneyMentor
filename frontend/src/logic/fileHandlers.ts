@@ -102,8 +102,7 @@ export const handleRemoveFile = async (
   const currentFiles = [...uploadedFiles];
 
   // Debug logging
-  console.log('handleRemoveFile called with:', { fileIndex, uploadedFilesLength: currentFiles.length });
-  console.log('currentFiles:', currentFiles);
+  
 
   // Validate fileIndex and file existence
   if (fileIndex < 0 || fileIndex >= currentFiles.length) {
@@ -118,8 +117,7 @@ export const handleRemoveFile = async (
   }
 
   const file = currentFiles[fileIndex];
-  console.log('File at index', fileIndex, ':', file);
-  
+ 
   // Validate file object
   if (!file || !file.name) {
     console.error('Invalid file object at index:', fileIndex, 'file:', file);
@@ -135,7 +133,7 @@ export const handleRemoveFile = async (
   try {
     // Remove file from local state immediately
     const updatedFiles = currentFiles.filter((_, index) => index !== fileIndex);
-    console.log('Updated files array:', updatedFiles);
+   
     setUploadedFiles(updatedFiles);
     
     const removalMessage = createSystemMessage(

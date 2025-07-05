@@ -4341,3 +4341,49 @@
 .chat-widget.dark .bot-message .math-expression.inline {
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* Session Expired Modal Styles */
+.session-expired-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 1000;
+  padding-top: 60px;
+}
+
+.session-expired-card {
+  background: rgba(255, 255, 255);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  animation: slideInDown 0.3s ease-out;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.chat-widget.dark .session-expired-card {
+  background: rgba(31, 41, 55, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
+@media (max-width: 480px) {
+  .session-expired-card {
+    width: 95%;
+    padding: 20px;
+    margin: 0 10px;
+  }
+}

@@ -62,7 +62,7 @@ export const QuizHistoryDropdown: React.FC<QuizHistoryDropdownProps> = ({
 
   if (!open) return null;
 
-  console.log('QuizHistoryDropdown rendering:', { open, position, quizHistoryLength: quizHistory.length });
+ 
 
   return ReactDOM.createPortal(
     <div 

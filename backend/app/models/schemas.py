@@ -84,6 +84,7 @@ class QuizSubmissionBatch(BaseModel):
     quiz_type: str = Field("micro", description="Type of quiz (micro, diagnostic, etc.)")
     session_id: Optional[str] = Field(None, description="Session identifier for tracking")
     responses: List[Dict[str, Any]] = Field(..., description="List of quiz responses")
+    user_id: Optional[str] = Field(None, description="User identifier (optional, can be derived from token)")
     
     @field_validator('responses')
     @classmethod

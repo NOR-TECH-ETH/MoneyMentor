@@ -8,6 +8,7 @@ import { ContentCopy, Refresh, Edit, Delete, Check, Close } from '@mui/icons-mat
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import ThumbUpOutlinedIcon from '@mui/icons-material/ThumbUpOutlined';
 import ThumbDownOutlinedIcon from '@mui/icons-material/ThumbDownOutlined';
+import 'katex/dist/katex.min.css';
 
 interface BotMessageProps {
   content: string;
@@ -33,6 +34,8 @@ function escapeCurrencyDollars(markdown: string): string {
   // Replace $ with \\$ only when it is followed by a digit, but do not consume the digit
   return markdown.replace(/(^|[^\\$\w])\$(?=\d)/g, '$1\\$');
 }
+
+
 
 const BotMessage: React.FC<BotMessageProps> = ({
   content,
@@ -132,33 +135,16 @@ const BotMessage: React.FC<BotMessageProps> = ({
   return (
     <div className="bot-message">
       <div className="markdown prose w-full max-w-full break-words dark:prose-invert">
-        {markdownMode ? (
-          <ReactMarkdown
-            remarkPlugins={[
-              remarkGfm,
-              [remarkMath, { singleDollarTextMath: true }],
-            ]}
-            rehypePlugins={[
-              [rehypeKatex, { strict: 'ignore' }],
-              [
-                rehypeHighlight,
-                {
-                  detect: true,
-                  ignoreMissing: true,
-                  subset: codeLanguageSubset,
-                },
-              ],
-            ]}
-            components={{
-              code,
-              p,
-            }}
-          >
-            {escapeCurrencyDollars(fixLatexComments(content))}
-          </ReactMarkdown>
-        ) : (
-          <span className="whitespace-pre-wrap">{content}</span>
-        )}
+        <ReactMarkdown
+          remarkPlugins={[remarkMath, remarkGfm]}
+          rehypePlugins={[rehypeKatex, rehypeHighlight]}
+          components={{
+            code,
+            p,
+          }}
+        >
+          {fixLatexComments(escapeCurrencyDollars(content))}
+        </ReactMarkdown>
       </div>
 
       {showActions && (

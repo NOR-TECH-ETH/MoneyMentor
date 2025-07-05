@@ -137,7 +137,7 @@ export const handleSessionDelete = async (
     }
     
     // Here you would typically call an API to delete the session
-    console.log('Deleting session:', sessionId);
+  
   } catch (error) {
     console.error('Failed to delete session:', error);
   }

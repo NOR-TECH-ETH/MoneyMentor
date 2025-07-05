@@ -33,12 +33,19 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
       }
       if (result && (result.token || result.access_token)) {
         const token = result.token || result.access_token;
+        let expiresAt: Date;
+        
         if (keepLoggedIn) {
           Cookies.set('auth_token', token, { expires: 30 });
+          expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         } else {
           const expires = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
           Cookies.set('auth_token', token, { expires });
+          expiresAt = expires;
         }
+        
+        // Store expiration time in localStorage for tracking
+        localStorage.setItem('auth_token_expires', expiresAt.toISOString());
         onAuthSuccess();
       } else {
         setError('No token returned.');
@@ -120,6 +127,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
 
 export const logout = () => {
   Cookies.remove('auth_token');
+  localStorage.removeItem('auth_token_expires');
   window.location.reload();
 };
 
