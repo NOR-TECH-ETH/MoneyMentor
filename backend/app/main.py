@@ -2,9 +2,10 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.routes import chat, quiz, calculation, progress, content, course, streaming_chat, user
+from app.api.routes import chat, quiz, calculation, progress, content, course, streaming_chat, user, session
 from app.services.background_sync_service import background_sync_service
 from app.services.database_listener_service import database_listener_service
+from app.services.session_cleanup_service import session_cleanup_service
 
 
 port = int(os.environ.get("PORT", 8080))
@@ -37,6 +38,7 @@ app.include_router(content.router, prefix="/api", tags=["Content Management"])
 app.include_router(course.router, prefix="/api/course", tags=["course"])
 app.include_router(streaming_chat.router, prefix="/api/streaming", tags=["streaming"])
 app.include_router(user.router, prefix="/api/user", tags=["user"])
+app.include_router(session.router, prefix="/api/session", tags=["session"])
 
 @app.on_event("startup")
 async def startup_event():
@@ -49,6 +51,13 @@ async def startup_event():
         print("✅ Background sync service started")
     except Exception as e:
         print(f"❌ Failed to start background sync service: {e}")
+    
+    # Start session cleanup service
+    try:
+        await session_cleanup_service.start_cleanup_service()
+        print("✅ Session cleanup service started")
+    except Exception as e:
+        print(f"❌ Failed to start session cleanup service: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -61,6 +70,13 @@ async def shutdown_event():
         print("✅ Background sync service stopped")
     except Exception as e:
         print(f"❌ Error stopping background sync service: {e}")
+    
+    # Stop session cleanup service
+    try:
+        await session_cleanup_service.stop_cleanup_service()
+        print("✅ Session cleanup service stopped")
+    except Exception as e:
+        print(f"❌ Error stopping session cleanup service: {e}")
 
 @app.get("/")
 async def root():
@@ -96,6 +112,17 @@ async def force_sync():
         "success": success,
         "message": "Sync completed" if success else "Sync failed"
     }
+
+@app.get("/session/cleanup/status")
+async def get_session_cleanup_status():
+    """Get session cleanup service status"""
+    return session_cleanup_service.get_status()
+
+@app.post("/session/cleanup/force")
+async def force_session_cleanup():
+    """Force an immediate session cleanup"""
+    result = await session_cleanup_service.force_cleanup_now()
+    return result
 
 if __name__ == "__main__":
     import uvicorn

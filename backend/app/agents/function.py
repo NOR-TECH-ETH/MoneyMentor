@@ -119,23 +119,32 @@ class MoneyMentorFunction:
             session = await get_session(session_id)
             if not session:
                 # Create new session if it doesn't exist
-                session = await create_session(user_id=validated_user_id)  # Use the validated user_id
+                # For new sessions, we'll create it with the current message
+                initial_message = {
+                    "role": role,
+                    "content": content,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                session = await create_session(
+                    user_id=validated_user_id,
+                    initial_chat_history=[initial_message]
+                )
                 # Use the generated session_id from the new session
                 session_id = session["session_id"]
-            
-            # Get chat history and append new message
-            chat_history = session.get("chat_history", [])
-            chat_history.append({
-                "role": role,
-                "content": content,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            
-            # Update session with new chat history
-            from app.utils.session import update_session
-            await update_session(session_id, {"chat_history": chat_history})
-            
-            print(f"💾 DEBUG: Saved {role} message to session {session_id}")
+                print(f"💾 DEBUG: Created new session {session_id} with initial {role} message")
+            else:
+                # Session exists, append the message
+                chat_history = session.get("chat_history", [])
+                chat_history.append({
+                    "role": role,
+                    "content": content,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                
+                # Update session with new chat history
+                from app.utils.session import update_session
+                await update_session(session_id, {"chat_history": chat_history})
+                print(f"💾 DEBUG: Added {role} message to existing session {session_id}")
             
         except Exception as e:
             print(f"❌ ERROR: Failed to save history: {e}")
@@ -165,7 +174,18 @@ class MoneyMentorFunction:
                     # Create new session and use the generated session_id
                     # Validate user_id is a real UUID from authentication
                     validated_user_id = require_authenticated_user_id(user_id, "session creation in process_message")
-                    session = await create_session(user_id=validated_user_id)  # Use validated user_id
+                    
+                    # Create initial user message
+                    initial_message = {
+                        "role": "user",
+                        "content": message,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    session = await create_session(
+                        user_id=validated_user_id,
+                        initial_chat_history=[initial_message]
+                    )
                     session_id = session["session_id"]  # Update session_id to use generated one
                 
                 if not session:

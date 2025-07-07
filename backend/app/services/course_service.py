@@ -439,6 +439,34 @@ class CourseService:
                     'updated_at': datetime.utcnow().isoformat()
                 }).execute()
             
+            # ALSO save to centralized quiz_responses table
+            try:
+                # Get course details for topic
+                course_result = self.supabase.table('courses').select('title, topic').eq('id', course_id).execute()
+                course_topic = course_result.data[0].get('topic', 'General Finance') if course_result.data else 'General Finance'
+                
+                quiz_response_data = {
+                    'user_id': user_id,
+                    'quiz_id': f'course_quiz_{course_id}_{page_index}_{datetime.utcnow().timestamp()}',
+                    'topic': course_topic,
+                    'selected': selected_option,
+                    'correct': correct,
+                    'quiz_type': 'course',
+                    'score': 100.0 if correct else 0.0,
+                    'course_id': course_id,
+                    'page_index': page_index,
+                    'question_data': quiz_data,
+                    'correct_answer': quiz_data.get('correct_answer', '') if isinstance(quiz_data, dict) else '',
+                    'explanation': explanation
+                }
+                
+                self.supabase.table('quiz_responses').insert(quiz_response_data).execute()
+                logger.info(f"Course quiz response saved to centralized quiz_responses for user {user_id}, course {course_id}, page {page_index}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to save course quiz to centralized quiz_responses: {e}")
+                # Don't fail the main request if centralized save fails
+            
             # Get next page if available
             next_page = None
             total_pages = await self._get_total_pages(course_id)

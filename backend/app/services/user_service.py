@@ -168,22 +168,23 @@ class UserService:
             if not profile:
                 return {}
             
-            # Get additional statistics from user_sessions and quiz_responses
+            # Get additional statistics from user_sessions and centralized quiz_responses
             chat_result = self.supabase.table('user_sessions').select('chat_history').eq('user_id', str(user_id)).execute()
-            quiz_result = self.supabase.table('quiz_responses').select('count').eq('user_id', str(user_id)).execute()
             
             # Count total chat messages from user_sessions
             total_chat_messages = 0
             for session in chat_result.data:
                 chat_history = session.get('chat_history', [])
                 total_chat_messages += len(chat_history)
-            total_quiz_responses = quiz_result.count if hasattr(quiz_result, 'count') else 0
+            
+            # Get quiz statistics from centralized quiz_responses table
+            quiz_responses = self.supabase.table('quiz_responses').select('correct, quiz_type').eq('user_id', str(user_id)).execute()
+            total_quiz_responses = len(quiz_responses.data) if quiz_responses.data else 0
             
             # Calculate accuracy from quiz responses
             correct_answers = 0
             total_answers = 0
             
-            quiz_responses = self.supabase.table('quiz_responses').select('correct').eq('user_id', str(user_id)).execute()
             for response in quiz_responses.data:
                 total_answers += 1
                 if response.get('correct', False):

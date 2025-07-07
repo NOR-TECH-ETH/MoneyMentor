@@ -39,26 +39,38 @@ class ChatService:
             session = await get_session(session_id)
             if not session:
                 try:
-                    session = await create_session()
+                    # Create user message for initial chat history
+                    user_message = {
+                        "role": "user",
+                        "content": query,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    # Create session with initial user message
+                    session = await create_session(
+                        user_id=user_id,
+                        initial_chat_history=[user_message]
+                    )
                     session_id = session["session_id"]  # Update session_id to use generated one
                     if not session:
                         raise HTTPException(status_code=500, detail="Failed to create session")
-                    logger.info(f"Created new session: {session_id}")
+                    logger.info(f"Created new session: {session_id} with initial user message")
                 except Exception as e:
                     logger.error(f"Failed to create session: {e}")
                     raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
+            else:
+                # Session exists, create user message for background processing
+                user_message = {
+                    "role": "user",
+                    "content": query,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
             step1_time = time.time() - step1_start
             print(f"         ✅ Step 1.1 completed in {step1_time:.3f}s (Session management)")
             
             # Step 2: Essential memory operations (CRITICAL - needed for context)
             step2_start = time.time()
             print(f"         🧠 Step 1.2: Essential memory operations...")
-            
-            user_message = {
-                "role": "user",
-                "content": query,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
             
             # Use provided user_id or fall back to session user_id or session_id
             user_id = user_id or session.get("user_id", session_id)
@@ -173,10 +185,25 @@ class ChatService:
     async def _background_chat_history(self, session_id: str, user_id: str, user_message: Dict, assistant_message: str):
         """Background chat history updates - for future context"""
         try:
-            # Add user message to chat history (CRITICAL - needed for context)
-            await add_chat_message(session_id, user_message)
+            # Get current session to check if user message is already there
+            session = await get_session(session_id)
+            if not session:
+                logger.warning(f"Session {session_id} not found for chat history update")
+                return
+                
+            chat_history = session.get("chat_history", [])
             
-            # Add assistant response to chat history (CRITICAL - needed for context)
+            # Check if user message is already in chat history (for new sessions)
+            user_message_exists = any(
+                msg.get("role") == "user" and msg.get("content") == user_message.get("content")
+                for msg in chat_history
+            )
+            
+            # Only add user message if it's not already there
+            if not user_message_exists:
+                await add_chat_message(session_id, user_message)
+            
+            # Always add assistant response to chat history
             assistant_msg = {
                 "role": "assistant",
                 "content": assistant_message,

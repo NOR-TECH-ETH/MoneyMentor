@@ -38,7 +38,6 @@ class EngagementService:
             
             # Calculate engagement metrics efficiently
             chat_history = session.get("chat_history", [])
-            quiz_history = session.get("quiz_history", [])
             
             # Count messages (user messages only) - optimized
             messages_per_session = sum(1 for msg in chat_history if msg.get("role") == "user")
@@ -54,8 +53,15 @@ class EngagementService:
                     logger.warning(f"Failed to calculate session duration: {e}")
                     session_duration = 0
             
-            # Count quizzes attempted
-            quizzes_attempted = len(quiz_history)
+            # Count quizzes attempted from centralized quiz_responses table
+            try:
+                from app.core.database import get_supabase
+                supabase = get_supabase()
+                quiz_result = supabase.table('quiz_responses').select('id').eq('session_id', session_id).execute()
+                quizzes_attempted = len(quiz_result.data) if quiz_result.data else 0
+            except Exception as e:
+                logger.warning(f"Failed to get quiz count from centralized storage: {e}")
+                quizzes_attempted = 0
             
             # OPTIMIZATION: Skip pretest completion check for speed
             pretest_completed = False  # Skip this check to save time

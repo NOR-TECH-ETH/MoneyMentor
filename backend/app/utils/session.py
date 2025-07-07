@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import json
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.core.database import get_supabase, supabase
 from app.utils.user_validation import require_authenticated_user_id, sanitize_user_id_for_logging
 import logging
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _session_cache = {}
 _cache_lock = asyncio.Lock()
 
-async def create_session(session_id: str = None, user_id: str = None) -> Dict[str, Any]:
+async def create_session(session_id: str = None, user_id: str = None, initial_chat_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Create a new session with caching - requires authenticated user_id"""
     try:
         # Validate user_id is provided and is a real UUID from authentication
@@ -30,11 +30,18 @@ async def create_session(session_id: str = None, user_id: str = None) -> Dict[st
             logger.error(f"Invalid session_id format - looks like JSON: {session_id}")
             raise ValueError(f"Invalid session_id format: {session_id}")
         
+        # Check if user already has recent sessions to avoid creating unnecessary ones
+        recent_sessions = await get_recent_user_sessions(validated_user_id, hours=1)
+        if recent_sessions and len(recent_sessions) >= 3:
+            logger.warning(f"User {sanitized_user_id} has {len(recent_sessions)} recent sessions, consider reusing existing")
+        
+        # Use provided chat history or start with empty array
+        chat_history = initial_chat_history if initial_chat_history is not None else []
+        
         # Store in the correct format matching actual database schema
         db_session_data = {
             "user_id": validated_user_id,
-            "chat_history": [],
-            "quiz_history": [],
+            "chat_history": chat_history,  # Use provided chat history instead of empty array
             "progress": {},
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
@@ -62,7 +69,7 @@ async def create_session(session_id: str = None, user_id: str = None) -> Dict[st
         session_data = {
             "session_id": actual_session_id,  # Use database id as session_id
             "user_id": user_id,
-            "chat_history": [],
+            "chat_history": chat_history,  # Use the same chat history
             "quiz_history": [],
             "progress": {},
             "created_at": created_session["created_at"],
@@ -73,7 +80,7 @@ async def create_session(session_id: str = None, user_id: str = None) -> Dict[st
         async with _cache_lock:
             _session_cache[actual_session_id] = session_data
         
-        logger.info(f"Session created and stored in database: {actual_session_id}")
+        logger.info(f"Session created and stored in database: {actual_session_id} with {len(chat_history)} initial messages")
         return session_data
         
     except Exception as e:
@@ -100,7 +107,6 @@ async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
                 "session_id": str(db_data["id"]),  # Use database id as session_id
                 "user_id": db_data.get("user_id"),
                 "chat_history": db_data.get("chat_history", []),
-                "quiz_history": db_data.get("quiz_history", []),
                 "progress": db_data.get("progress", {}),
                 "created_at": db_data.get("created_at"),
                 "updated_at": db_data.get("updated_at")
@@ -137,7 +143,6 @@ async def update_session(session_id: str, data: Dict[str, Any]) -> Dict[str, Any
                         "session_id": str(db_data["id"]),
                         "user_id": db_data.get("user_id"),
                         "chat_history": db_data.get("chat_history", []),
-                        "quiz_history": db_data.get("quiz_history", []),
                         "progress": db_data.get("progress", {}),
                         "created_at": db_data.get("created_at"),
                         "updated_at": db_data.get("updated_at")
@@ -168,8 +173,6 @@ async def _update_session_async(session_id: str, data: Dict[str, Any]):
         # Map the data to the correct database columns
         if "chat_history" in data:
             update_data["chat_history"] = data["chat_history"]
-        if "quiz_history" in data:
-            update_data["quiz_history"] = data["quiz_history"]
         if "progress" in data:
             update_data["progress"] = data["progress"]
         
@@ -188,7 +191,6 @@ async def _store_session_async(session_data: Dict[str, Any]):
         db_session_data = {
             "user_id": validated_user_id,
             "chat_history": session_data.get("chat_history", []),
-            "quiz_history": session_data.get("quiz_history", []),
             "progress": session_data.get("progress", {}),
             "created_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
@@ -244,35 +246,41 @@ async def add_chat_message(session_id: str, message: Dict[str, Any]) -> None:
         raise
 
 async def add_quiz_response(session_id: str, quiz_data: Dict[str, Any]) -> None:
-    """Add a quiz response to history with optimized caching"""
+    """Add a quiz response to centralized quiz_responses table"""
     try:
-        # Update cache directly if available
-        async with _cache_lock:
-            if session_id in _session_cache:
-                quiz_history = _session_cache[session_id].get("quiz_history", [])
-                quiz_history.append(quiz_data)
-                _session_cache[session_id]["quiz_history"] = quiz_history
-                _session_cache[session_id]["updated_at"] = datetime.utcnow().isoformat()
-                
-                # Async database update
-                asyncio.create_task(_update_session_async(session_id, {
-                    "quiz_history": quiz_history,
-                    "updated_at": _session_cache[session_id]["updated_at"]
-                }))
-                return
-        
-        # Fallback to database if not in cache
+        # Get session to get user_id
         session = await get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
-            
-        quiz_history = session.get("quiz_history", [])
-        quiz_history.append(quiz_data)
         
-        await update_session(session_id, {"quiz_history": quiz_history})
+        user_id = session.get("user_id")
+        if not user_id:
+            raise ValueError(f"Session {session_id} has no user_id")
+        
+        # Prepare quiz response data for centralized storage
+        quiz_response_data = {
+            'user_id': user_id,
+            'quiz_id': quiz_data.get('quiz_id', f'micro_quiz_{session_id}_{datetime.utcnow().timestamp()}'),
+            'topic': quiz_data.get('topic', 'General Finance'),
+            'selected': quiz_data.get('selected_option', ''),
+            'correct': quiz_data.get('correct', False),
+            'quiz_type': 'micro',  # Session-specific quizzes are micro quizzes
+            'score': 100.0 if quiz_data.get('correct', False) else 0.0,
+            'session_id': session_id,
+            'question_data': quiz_data.get('question_data', {}),
+            'correct_answer': quiz_data.get('correct_answer', ''),
+            'explanation': quiz_data.get('explanation', '')
+        }
+        
+        # Save to centralized quiz_responses table
+        from app.core.database import get_supabase
+        supabase = get_supabase()
+        supabase.table('quiz_responses').insert(quiz_response_data).execute()
+        
+        logger.info(f"Session quiz response saved to centralized quiz_responses for session {session_id}, user {user_id}")
         
     except Exception as e:
-        logger.error(f"Failed to add quiz response: {e}")
+        logger.error(f"Failed to add quiz response to centralized storage: {e}")
         raise
 
 async def update_progress(session_id: str, progress_data: Dict[str, Any]) -> None:
@@ -318,3 +326,111 @@ def get_cache_stats():
         "cache_size": len(_session_cache),
         "cached_sessions": list(_session_cache.keys())
     } 
+
+async def get_all_user_sessions(user_id: str) -> List[Dict[str, Any]]:
+    """Get all sessions for a specific user"""
+    try:
+        # Validate user_id is a real UUID from authentication
+        validated_user_id = require_authenticated_user_id(user_id, "get all user sessions")
+        sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+        
+        logger.debug(f"Getting all sessions for user: {sanitized_user_id}")
+        
+        # Get all sessions for the user from database
+        result = supabase.table("user_sessions").select("*").eq("user_id", validated_user_id).order("updated_at", desc=True).execute()
+        
+        if not result.data:
+            return []
+        
+        # Convert database format to expected session format
+        sessions = []
+        for db_data in result.data:
+            session_data = {
+                "session_id": str(db_data["id"]),  # Use database id as session_id
+                "user_id": db_data.get("user_id"),
+                "chat_history": db_data.get("chat_history", []),
+                "progress": db_data.get("progress", {}),
+                "created_at": db_data.get("created_at"),
+                "updated_at": db_data.get("updated_at"),
+                "last_active": db_data.get("last_active")
+            }
+            sessions.append(session_data)
+        
+        logger.debug(f"Found {len(sessions)} sessions for user {sanitized_user_id}")
+        return sessions
+        
+    except Exception as e:
+        logger.error(f"Failed to get all user sessions: {e}")
+        return [] 
+
+async def get_recent_user_sessions(user_id: str, hours: int = 24) -> List[Dict[str, Any]]:
+    """Get recent sessions for a user within specified hours"""
+    try:
+        # Validate user_id is a real UUID from authentication
+        validated_user_id = require_authenticated_user_id(user_id, "get recent user sessions")
+        sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+        
+        # Calculate cutoff time
+        cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+        
+        # Get recent sessions from database
+        result = supabase.table("user_sessions").select("*").eq("user_id", validated_user_id).gte("created_at", cutoff_time.isoformat()).order("created_at", desc=True).execute()
+        
+        if not result.data:
+            return []
+        
+        # Convert database format to expected session format
+        sessions = []
+        for db_data in result.data:
+            session_data = {
+                "session_id": str(db_data["id"]),
+                "user_id": db_data.get("user_id"),
+                "chat_history": db_data.get("chat_history", []),
+                "progress": db_data.get("progress", {}),
+                "created_at": db_data.get("created_at"),
+                "updated_at": db_data.get("updated_at"),
+                "last_active": db_data.get("last_active")
+            }
+            sessions.append(session_data)
+        
+        return sessions
+        
+    except Exception as e:
+        logger.error(f"Failed to get recent user sessions: {e}")
+        return []
+
+async def cleanup_empty_sessions(user_id: str = None, days_old: int = 30) -> Dict[str, Any]:
+    """Clean up sessions with empty chat history older than specified days"""
+    try:
+        cutoff_time = datetime.utcnow() - timedelta(days=days_old)
+        
+        if user_id:
+            # Clean up for specific user
+            validated_user_id = require_authenticated_user_id(user_id, "cleanup empty sessions")
+            result = supabase.table("user_sessions").delete().eq("user_id", validated_user_id).lt("created_at", cutoff_time.isoformat()).eq("chat_history", []).execute()
+        else:
+            # Clean up for all users
+            result = supabase.table("user_sessions").delete().lt("created_at", cutoff_time.isoformat()).eq("chat_history", []).execute()
+        
+        deleted_count = len(result.data) if result.data else 0
+        
+        # Clear cache for deleted sessions
+        if result.data:
+            async with _cache_lock:
+                for session_data in result.data:
+                    session_id = str(session_data.get("id"))
+                    _session_cache.pop(session_id, None)
+        
+        logger.info(f"Cleaned up {deleted_count} empty sessions older than {days_old} days")
+        return {
+            "deleted_count": deleted_count,
+            "cutoff_date": cutoff_time.isoformat(),
+            "user_id": user_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to cleanup empty sessions: {e}")
+        return {
+            "deleted_count": 0,
+            "error": str(e)
+        } 

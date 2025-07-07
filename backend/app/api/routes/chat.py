@@ -7,17 +7,20 @@ import time
 import json
 from fastapi.responses import StreamingResponse
 import asyncio
+from collections import OrderedDict
 
 
 from app.core.config import settings
 from app.core.auth import get_current_active_user
+from app.core.database import get_supabase
 from app.utils.session import (
     create_session,
     get_session,
     add_chat_message,
     add_quiz_response,
     update_progress,
-    update_session
+    update_session,
+    get_all_user_sessions
 )
 from app.services.content_service import ContentService
 from app.models.schemas import ChatMessageRequest
@@ -102,9 +105,24 @@ async def process_message_streaming(
         print(f"   📋 Step 1: Getting session and chat history...")
         session = await get_session(request.session_id)
         if not session:
-            session = await create_session(request.session_id, current_user["id"])
+            # Create user message for initial chat history
+            user_message = {
+                "role": "user",
+                "content": request.query,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Create session with initial user message
+            session = await create_session(
+                request.session_id, 
+                current_user["id"],
+                initial_chat_history=[user_message]
+            )
             if not session:
                 raise HTTPException(status_code=500, detail="Failed to create session for streaming")
+            print(f"   ✅ Created new session: {session['session_id']} with initial user message")
+        else:
+            print(f"   ✅ Using existing session: {session['session_id']}")
         
         chat_history = session.get("chat_history", [])
         
@@ -220,16 +238,83 @@ async def clear_chat_history(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
             
-        # Update session with empty history
+        # Update session with empty chat history (quiz history is now in centralized table)
         await update_session(session_id, {
-            "chat_history": [],
-            "quiz_history": []
+            "chat_history": []
         })
         
         return {"status": "success", "message": "Chat history cleared"}
         
     except Exception as e:
         logger.error(f"Failed to clear chat history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/history/")
+async def get_all_user_sessions_route(
+    current_user: dict = Depends(get_current_active_user)
+) -> Dict[str, Any]:
+    """Get all sessions for the authenticated user with their chat histories"""
+    try:
+        # Get all sessions for the current user using the helper function
+        user_sessions = await get_all_user_sessions(current_user["id"])
+        
+        if not user_sessions:
+            return {
+                "success": True,
+                "sessions": {},
+                "total_sessions": 0,
+                "total_messages": 0
+            }
+        
+        # Create sessions object with session_id as keys
+        # Use OrderedDict to maintain the order from the database query
+        sessions = OrderedDict()
+        total_messages = 0
+        
+        for session_data in user_sessions:
+            # Get chat history from the session
+            chat_history = session_data.get("chat_history", [])
+            
+            # Skip sessions with no chat history
+            if not chat_history:
+                continue
+            
+            # Sort chat history by timestamp to ensure chronological order
+            sorted_chat_history = sorted(chat_history, key=lambda x: x.get("timestamp", ""))
+            
+            # Convert chat history to the required format
+            formatted_messages = []
+            for message in sorted_chat_history:
+                role = message.get("role", "")
+                content = message.get("content", "")
+                
+                # Format based on role
+                if role.lower() == "user":
+                    formatted_messages.append({"user": content})
+                elif role.lower() in ["assistant", "ai"]:
+                    formatted_messages.append({"assistant": content})
+                else:
+                    # Fallback for other roles
+                    formatted_messages.append({role: content})
+            
+            # Only add sessions that have formatted messages
+            if formatted_messages:
+                # Use session_id as the key
+                session_id = session_data["session_id"]
+                sessions[session_id] = formatted_messages
+                
+                total_messages += len(formatted_messages)
+        
+        return {
+            "success": True,
+            "sessions": sessions,
+            "total_sessions": len(sessions),
+            "total_messages": total_messages,
+            "user_id": current_user["id"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get user sessions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Performance endpoint removed - performance_monitor module not available 

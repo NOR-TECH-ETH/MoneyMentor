@@ -32,7 +32,7 @@ async def get_learning_analytics(user_id: str):
     try:
         supabase = get_supabase()
         
-        # Get quiz performance data
+        # Get quiz performance data from centralized storage
         quiz_data = supabase.table('quiz_responses').select('*').eq('user_id', str(user_id)).execute()
         
         # Get chat interaction data from user_sessions

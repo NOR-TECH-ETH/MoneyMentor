@@ -517,22 +517,96 @@ async def _update_user_progress_from_batch(user_id: str, quiz_type: str, topic_s
 
 @router.get("/history")
 async def get_quiz_history(current_user: dict = Depends(get_current_active_user)):
-    """Get user's quiz history and performance"""
+    """Get user's quiz history and performance from centralized storage"""
     try:
         supabase = get_supabase()
         
-        # Get quiz history for the user
+        # Get quiz history for the user from centralized quiz_responses table
         result = supabase.table('quiz_responses').select('*').eq('user_id', current_user["id"]).order('created_at', desc=True).execute()
+        
+        # Group by quiz type for better organization
+        quiz_history = result.data if result.data else []
+        quiz_by_type = {
+            'course': [],
+            'diagnostic': [],
+            'micro': []  # Session-specific quizzes are micro quizzes
+        }
+        
+        for quiz in quiz_history:
+            quiz_type = quiz.get('quiz_type', 'micro')
+            if quiz_type in quiz_by_type:
+                quiz_by_type[quiz_type].append(quiz)
+            else:
+                quiz_by_type['micro'].append(quiz)
         
         return {
             "user_id": current_user["id"],
-            "quiz_history": result.data,
-            "total_quizzes": len(result.data) if result.data else 0
+            "quiz_history": quiz_history,
+            "quiz_by_type": quiz_by_type,
+            "total_quizzes": len(quiz_history),
+            "course_quizzes": len(quiz_by_type['course']),
+            "diagnostic_quizzes": len(quiz_by_type['diagnostic']),
+            "micro_quizzes": len(quiz_by_type['micro'])  # Includes both micro and session quizzes
         }
         
     except Exception as e:
         logger.error(f"Quiz history retrieval failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to get quiz history")
+
+@router.get("/history/session/{session_id}")
+async def get_session_quiz_history(
+    session_id: str,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Get micro quiz history for a specific session from centralized storage"""
+    try:
+        supabase = get_supabase()
+        
+        # Get micro quiz history for the specific session
+        result = supabase.table('quiz_responses').select('*').eq('session_id', session_id).eq('user_id', current_user["id"]).eq('quiz_type', 'micro').order('created_at', desc=True).execute()
+        
+        return {
+            "session_id": session_id,
+            "user_id": current_user["id"],
+            "quiz_history": result.data if result.data else [],
+            "total_quizzes": len(result.data) if result.data else 0,
+            "quiz_type": "micro"  # Clarify that these are micro quizzes
+        }
+        
+    except Exception as e:
+        logger.error(f"Session micro quiz history retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get session micro quiz history")
+
+@router.get("/history/course/{course_id}")
+async def get_course_quiz_history(
+    course_id: str,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Get quiz history for a specific course from centralized storage"""
+    try:
+        supabase = get_supabase()
+        
+        # Get quiz history for the specific course
+        result = supabase.table('quiz_responses').select('*').eq('course_id', course_id).eq('user_id', current_user["id"]).order('page_index', asc=True).execute()
+        
+        # Calculate course performance
+        quiz_history = result.data if result.data else []
+        total_quizzes = len(quiz_history)
+        correct_answers = sum(1 for quiz in quiz_history if quiz.get('correct', False))
+        score = (correct_answers / total_quizzes * 100) if total_quizzes > 0 else 0
+        
+        return {
+            "course_id": course_id,
+            "user_id": current_user["id"],
+            "quiz_history": quiz_history,
+            "total_quizzes": total_quizzes,
+            "correct_answers": correct_answers,
+            "score": round(score, 2)
+        }
+        
+    except Exception as e:
+        logger.error(f"Course quiz history retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get course quiz history")
 
 @router.post("/session/")
 async def create_new_session(current_user: dict = Depends(get_current_active_user)):
