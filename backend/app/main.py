@@ -3,6 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.routes import chat, quiz, calculation, progress, content, course, streaming_chat, user
+from app.services.background_sync_service import background_sync_service
+from app.services.database_listener_service import database_listener_service
+
 
 port = int(os.environ.get("PORT", 8080))
 # Log the allowed origins
@@ -35,6 +38,30 @@ app.include_router(course.router, prefix="/api/course", tags=["course"])
 app.include_router(streaming_chat.router, prefix="/api/streaming", tags=["streaming"])
 app.include_router(user.router, prefix="/api/user", tags=["user"])
 
+@app.on_event("startup")
+async def startup_event():
+    """Startup event - initialize background services"""
+    print("🚀 Starting MoneyMentor API...")
+    
+    # Start background sync service for Google Sheets
+    try:
+        await background_sync_service.start_background_sync()
+        print("✅ Background sync service started")
+    except Exception as e:
+        print(f"❌ Failed to start background sync service: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Shutdown event - cleanup background services"""
+    print("🛑 Shutting down MoneyMentor API...")
+    
+    # Stop background sync service
+    try:
+        await background_sync_service.stop_background_sync()
+        print("✅ Background sync service stopped")
+    except Exception as e:
+        print(f"❌ Error stopping background sync service: {e}")
+
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -49,6 +76,26 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "MoneyMentor API"}
+
+@app.get("/sync/status")
+async def get_sync_status():
+    """Get background sync service status"""
+    return background_sync_service.get_sync_status()
+
+@app.get("/sync/supabase-listener")
+async def get_supabase_listener_status():
+    """Get Supabase real-time listener service status"""
+    from app.services.supabase_listener_service import supabase_listener_service
+    return supabase_listener_service.get_status()
+
+@app.post("/sync/force")
+async def force_sync():
+    """Force an immediate sync to Google Sheets"""
+    success = await background_sync_service.force_sync_now()
+    return {
+        "success": success,
+        "message": "Sync completed" if success else "Sync failed"
+    }
 
 if __name__ == "__main__":
     import uvicorn

@@ -4,6 +4,7 @@ import logging
 from app.core.database import get_supabase
 from app.core.auth import get_user_by_id, update_user, delete_user, change_user_password
 from app.models.schemas import UserProfileResponse, UserProfileUpdate
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ class UserService:
             result = self.supabase.table('user_profiles').insert(profile_data).execute()
             
             if result.data:
+                # Trigger automatic Google Sheets sync
+                await self._sync_user_profiles_to_sheets()
                 return UserProfileResponse(**result.data[0])
             
             return None
@@ -74,6 +77,8 @@ class UserService:
             result = self.supabase.table('user_profiles').update(update_data).eq('user_id', user_id).execute()
             
             if result.data:
+                # Trigger automatic Google Sheets sync
+                await self._sync_user_profiles_to_sheets()
                 return UserProfileResponse(**result.data[0])
             
             return None
@@ -120,6 +125,41 @@ class UserService:
             logger.error(f"Error incrementing quiz count: {e}")
             return False
     
+    async def _sync_user_profiles_to_sheets(self):
+        """Background task to sync user profiles to Google Sheets"""
+        try:
+            from app.services.google_sheets_service import GoogleSheetsService
+            
+            # Run the sync in the background to avoid blocking the main request
+            asyncio.create_task(self._background_sync_to_sheets())
+            
+        except Exception as e:
+            logger.error(f"Error triggering Google Sheets sync: {e}")
+    
+    async def _background_sync_to_sheets(self):
+        """Background task to sync user profiles to Google Sheets"""
+        try:
+            from app.services.google_sheets_service import GoogleSheetsService
+            
+            sheets_service = GoogleSheetsService()
+            
+            # Get all user profiles for export
+            user_profiles = await sheets_service.get_all_user_profiles_for_export()
+            
+            if user_profiles:
+                # Export to Google Sheets
+                success = await sheets_service.export_user_profiles_to_sheet(user_profiles)
+                
+                if success:
+                    logger.info(f"Successfully synced {len(user_profiles)} user profiles to Google Sheets")
+                else:
+                    logger.error("Failed to sync user profiles to Google Sheets")
+            else:
+                logger.warning("No user profiles found to sync to Google Sheets")
+                
+        except Exception as e:
+            logger.error(f"Error in background Google Sheets sync: {e}")
+
     async def get_user_statistics(self, user_id: str) -> Dict[str, Any]:
         """Get comprehensive user statistics"""
         try:
@@ -128,18 +168,22 @@ class UserService:
             if not profile:
                 return {}
             
-            # Get additional statistics from chat_history and quiz_responses
-            chat_result = self.supabase.table('chat_history').select('count').eq('user_id', user_id).execute()
-            quiz_result = self.supabase.table('quiz_responses').select('count').eq('user_id', user_id).execute()
+            # Get additional statistics from user_sessions and quiz_responses
+            chat_result = self.supabase.table('user_sessions').select('chat_history').eq('user_id', str(user_id)).execute()
+            quiz_result = self.supabase.table('quiz_responses').select('count').eq('user_id', str(user_id)).execute()
             
-            total_chat_messages = chat_result.count if hasattr(chat_result, 'count') else 0
+            # Count total chat messages from user_sessions
+            total_chat_messages = 0
+            for session in chat_result.data:
+                chat_history = session.get('chat_history', [])
+                total_chat_messages += len(chat_history)
             total_quiz_responses = quiz_result.count if hasattr(quiz_result, 'count') else 0
             
             # Calculate accuracy from quiz responses
             correct_answers = 0
             total_answers = 0
             
-            quiz_responses = self.supabase.table('quiz_responses').select('correct').eq('user_id', user_id).execute()
+            quiz_responses = self.supabase.table('quiz_responses').select('correct').eq('user_id', str(user_id)).execute()
             for response in quiz_responses.data:
                 total_answers += 1
                 if response.get('correct', False):
@@ -168,11 +212,11 @@ class UserService:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
             
-            # Get chat activity
-            chat_result = self.supabase.table('chat_history').select('created_at').eq('user_id', user_id).gte('created_at', start_date.isoformat()).execute()
+            # Get chat activity from user_sessions
+            chat_result = self.supabase.table('user_sessions').select('chat_history, created_at, updated_at').eq('user_id', str(user_id)).gte('created_at', start_date.isoformat()).execute()
             
             # Get quiz activity
-            quiz_result = self.supabase.table('quiz_responses').select('created_at, correct').eq('user_id', user_id).gte('created_at', start_date.isoformat()).execute()
+            quiz_result = self.supabase.table('quiz_responses').select('created_at, correct').eq('user_id', str(user_id)).gte('created_at', start_date.isoformat()).execute()
             
             # Process activity by day
             activity_by_day = {}
@@ -185,11 +229,16 @@ class UserService:
                     'total_answers': 0
                 }
             
-            # Count chat activity
-            for chat in chat_result.data:
-                chat_date = datetime.fromisoformat(chat['created_at'].replace('Z', '+00:00')).date()
-                if chat_date.isoformat() in activity_by_day:
-                    activity_by_day[chat_date.isoformat()]['chats'] += 1
+            # Count chat activity from user_sessions
+            for session in chat_result.data:
+                chat_history = session.get('chat_history', [])
+                # Count messages in this session
+                message_count = len(chat_history)
+                if message_count > 0:
+                    # Use session creation date for activity tracking
+                    session_date = datetime.fromisoformat(session['created_at'].replace('Z', '+00:00')).date()
+                    if session_date.isoformat() in activity_by_day:
+                        activity_by_day[session_date.isoformat()]['chats'] += message_count
             
             # Count quiz activity
             for quiz in quiz_result.data:
@@ -222,6 +271,8 @@ class UserService:
             success = await delete_user(user_id)
             
             if success:
+                # Trigger automatic Google Sheets sync after user deletion
+                await self._sync_user_profiles_to_sheets()
                 logger.info(f"User account {user_id} deleted successfully")
             
             return success

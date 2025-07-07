@@ -21,24 +21,48 @@ CREATE TABLE IF NOT EXISTS user_progress (
 
 CREATE INDEX IF NOT EXISTS idx_user_progress_user_id ON user_progress(user_id);
 
--- Create document_chunks table
-CREATE TABLE IF NOT EXISTS document_chunks (
-    id text PRIMARY KEY,
-    document_id text,
-    content text,
-    embedding vector(1536),
-    chunk_index integer,
-    created_at timestamp with time zone DEFAULT now(),
-    metadata jsonb DEFAULT '{}'
+-- Create content_files table for file metadata
+CREATE TABLE IF NOT EXISTS content_files (
+    file_id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    filename text NOT NULL,
+    content_type text NOT NULL,
+    uploaded_at timestamp with time zone DEFAULT now(),
+    status text DEFAULT 'processing',
+    chunk_count integer DEFAULT 0,
+    error text,
+    processed_chunks integer DEFAULT 0,
+    progress_percentage numeric(5, 2) DEFAULT 0,
+    estimated_time_remaining numeric(10, 2),
+    processing_time numeric(10, 2),
+    file_size bigint,
+    retry_count integer DEFAULT 0,
+    failed_chunks integer[] DEFAULT '{}'::integer[]
 );
 
-CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_content_files_status ON content_files(status);
+CREATE INDEX IF NOT EXISTS idx_content_files_progress ON content_files(progress_percentage);
+CREATE INDEX IF NOT EXISTS idx_content_files_retry ON content_files(retry_count);
+
+-- Create content_chunks table for vector storage
+CREATE TABLE IF NOT EXISTS content_chunks (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    file_id uuid REFERENCES content_files(file_id) ON DELETE CASCADE,
+    chunk_index integer NOT NULL,
+    content text NOT NULL,
+    embedding vector(1536),
+    created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_chunks_file_id ON content_chunks(file_id);
+CREATE INDEX IF NOT EXISTS idx_content_chunks_chunk_index ON content_chunks(chunk_index);
 
 -- Create user_sessions table
 CREATE TABLE IF NOT EXISTS user_sessions (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id text NOT NULL,
-    session_data jsonb DEFAULT '{}',
+    chat_history jsonb DEFAULT '[]',
+    quiz_history jsonb DEFAULT '[]',
+    progress jsonb DEFAULT '{}',
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
@@ -135,12 +159,9 @@ CREATE TABLE IF NOT EXISTS user_course_sessions (
 CREATE INDEX IF NOT EXISTS idx_user_course_sessions_user_id ON user_course_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_course_sessions_course_id ON user_course_sessions(course_id);
 
--- Create vector search indexes
-CREATE INDEX IF NOT EXISTS document_chunks_embedding_hnsw_idx ON document_chunks 
+-- Create vector search indexes for content_chunks
+CREATE INDEX IF NOT EXISTS content_chunks_embedding_hnsw_idx ON content_chunks 
 USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 
-CREATE INDEX IF NOT EXISTS document_chunks_metadata_idx ON document_chunks 
-USING gin (metadata);
-
-CREATE INDEX IF NOT EXISTS document_chunks_doc_chunk_idx ON document_chunks (document_id, chunk_index); 
+CREATE INDEX IF NOT EXISTS content_chunks_file_chunk_idx ON content_chunks (file_id, chunk_index); 

@@ -10,6 +10,7 @@ AI-powered financial education chatbot with quiz engine and calculation services
 - **Content Management**: PDF/document ingestion with vector search
 - **Progress Tracking**: User learning analytics and progress monitoring
 - **Session Management**: Stateful conversations with Redis caching
+- **Google Sheets Integration**: Export user profiles and analytics data to Google Sheets
 
 ## Architecture
 
@@ -89,7 +90,95 @@ The API will be available at:
 - `GET /api/progress/user/{user_id}` - Get user progress
 - `GET /api/progress/analytics/{user_id}` - Get learning analytics
 - `GET /api/progress/leaderboard` - Get leaderboard
-- `POST /api/progress/export/{user_id}` - Export user data
+- `POST /api/progress/export/{user_id}` - Export specific user data to Google Sheets
+- `POST /api/progress/export-all-users` - Export all user profiles to Google Sheets UserProfiles tab
+
+## Google Sheets Integration
+
+The backend includes comprehensive Google Sheets integration for exporting user analytics and profile data. The system creates and maintains several tabs:
+
+### Available Tabs
+
+1. **UserProfiles**: Single table with user profile data
+   - Columns: `first_name`, `last_name`, `email`, `total_chats`, `quizzes_taken`, `day_streak`, `days_active`
+   - Purpose: Overview of all users and their engagement metrics
+
+2. **QuizResponses**: Detailed quiz response tracking
+   - Columns: `user_id`, `timestamp`, `quiz_id`, `topic_tag`, `selected_option`, `correct`, `session_id`
+
+3. **EngagementLogs**: User engagement analytics
+   - Columns: `user_id`, `session_id`, `messages_per_session`, `session_duration`, `quizzes_attempted`, `pretest_completed`, `last_activity`, `confidence_rating`
+
+4. **ChatLogs**: Chat message history
+   - Columns: `user_id`, `session_id`, `timestamp`, `message_type`, `message`, `response`
+
+5. **CourseProgress**: Course completion tracking
+   - Columns: `user_id`, `session_id`, `course_id`, `course_name`, `page_number`, `total_pages`, `completed`, `timestamp`
+
+### Setup
+
+1. Create a Google Sheets spreadsheet
+2. Set up Google Sheets API credentials
+3. Configure environment variables:
+   - `GOOGLE_SHEET_ID`: Your Google Sheets spreadsheet ID
+   - `GOOGLE_CLIENT_EMAIL`: Email to share the sheet with (read-only access)
+   - `GOOGLE_APPLICATION_CREDENTIALS`: Path to your service account JSON file
+
+### Usage
+
+#### Manual Export
+```bash
+# Export all user profiles to Google Sheets
+curl -X POST "http://localhost:8000/api/progress/export-all-users"
+
+# Export specific user profile
+curl -X POST "http://localhost:8000/api/progress/export/{user_id}"
+```
+
+#### Automatic Synchronization
+The system automatically syncs user profiles to Google Sheets in the following scenarios:
+
+1. **Background Sync Service**: Runs every 5 minutes to ensure data is always up-to-date
+2. **Real-time Updates**: When user profiles are updated through the application layer
+3. **Database Notifications**: Real-time notifications when database triggers update user profiles
+4. **Database Triggers**: When users take quizzes or send chat messages (triggers database functions)
+
+#### Sync Status and Control
+```bash
+# Check sync service status
+curl -X GET "http://localhost:8000/sync/status"
+
+# Check Supabase listener status
+curl -X GET "http://localhost:8000/sync/supabase-listener"
+
+# Force an immediate sync
+curl -X POST "http://localhost:8000/sync/force"
+```
+
+#### Supabase Real-time Notification System
+
+The system uses Supabase's real-time subscriptions to listen for changes to the `user_profiles` table. This ensures that Google Sheets stays synchronized even when updates happen at the database level.
+
+**How it works:**
+1. The `SupabaseListenerService` subscribes to INSERT and UPDATE events on the `user_profiles` table
+2. When a user profile is updated (by database triggers or direct updates), Supabase sends a real-time notification
+3. The listener receives the notification and triggers a Google Sheets sync after a 30-second delay (to batch multiple rapid updates)
+4. The background sync service also runs every 5 minutes as a fallback
+
+#### Testing
+```bash
+# Test automatic synchronization
+python test_automatic_sync.py
+
+# Test sync frequency
+python test_automatic_sync.py --frequency
+
+# Test Supabase real-time notification system
+python test_supabase_notifications.py
+
+# Test only notification callbacks
+python test_supabase_notifications.py --callbacks-only
+```
 
 ## Usage Examples
 

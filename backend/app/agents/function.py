@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.services.calculation_service import CalculationService
 from app.services.content_service import ContentService
 from app.utils.session import get_session, create_session
+from app.utils.user_validation import require_authenticated_user_id, sanitize_user_id_for_logging
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -107,14 +108,18 @@ class MoneyMentorFunction:
         self.calc_service = CalculationService()
         self.content_service = ContentService()
 
-    async def _save_history(self, session_id: str, role: str, content: str) -> None:
+    async def _save_history(self, session_id: str, role: str, content: str, user_id: str = None) -> None:
         """Append a message to session chat history"""
         try:
+            # Validate user_id is a real UUID from authentication
+            validated_user_id = require_authenticated_user_id(user_id, "history saving")
+            sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+            
             # Get existing session
             session = await get_session(session_id)
             if not session:
                 # Create new session if it doesn't exist
-                session = await create_session()
+                session = await create_session(user_id=validated_user_id)  # Use the validated user_id
                 # Use the generated session_id from the new session
                 session_id = session["session_id"]
             
@@ -158,7 +163,9 @@ class MoneyMentorFunction:
                 session = await get_session(session_id)
                 if not session:
                     # Create new session and use the generated session_id
-                    session = await create_session()
+                    # Validate user_id is a real UUID from authentication
+                    validated_user_id = require_authenticated_user_id(user_id, "session creation in process_message")
+                    session = await create_session(user_id=validated_user_id)  # Use validated user_id
                     session_id = session["session_id"]  # Update session_id to use generated one
                 
                 if not session:
@@ -209,9 +216,9 @@ class MoneyMentorFunction:
 
             # Handle calculation requests
             if is_calc:
-                return await self._handle_calculation_request(message, messages, session_id, skip_history_save=skip_session_fetch)
+                return await self._handle_calculation_request(message, messages, session_id, user_id or "default_user", skip_history_save=skip_session_fetch)
             else:
-                return await self._handle_general_chat(message, messages, session_id, skip_history_save=skip_session_fetch)
+                return await self._handle_general_chat(message, messages, session_id, user_id or "default_user", skip_history_save=skip_session_fetch)
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
@@ -221,7 +228,7 @@ class MoneyMentorFunction:
                 "error": str(e)
             }
 
-    async def _handle_calculation_request(self, message: str, messages: List[Dict], session_id: str, skip_history_save: bool = False) -> Dict[str, Any]:
+    async def _handle_calculation_request(self, message: str, messages: List[Dict], session_id: str, user_id: str = None, skip_history_save: bool = False) -> Dict[str, Any]:
         """Handle calculation requests with function calling"""
         try:
             # Phase 1: Function calling to extract parameters
@@ -274,8 +281,10 @@ class MoneyMentorFunction:
 
                 # Save to history in background (user gets response immediately)
                 if not skip_history_save:
-                    asyncio.create_task(self._save_history(session_id, "user", message))
-                    asyncio.create_task(self._save_history(session_id, "assistant", explanation))
+                    # Validate user_id is a real UUID
+                    validated_user_id = require_authenticated_user_id(user_id, "calculation history saving")
+                    asyncio.create_task(self._save_history(session_id, "user", message, validated_user_id))
+                    asyncio.create_task(self._save_history(session_id, "assistant", explanation, validated_user_id))
 
                 return {
                     "message": explanation,
@@ -285,7 +294,7 @@ class MoneyMentorFunction:
                 }
             else:
                 # No function call - treat as general chat
-                return await self._handle_general_chat(message, messages, session_id, skip_history_save=skip_history_save)
+                return await self._handle_general_chat(message, messages, session_id, user_id, skip_history_save=skip_history_save)
 
         except Exception as e:
             logger.error(f"Calculation handling failed: {e}")
@@ -295,7 +304,7 @@ class MoneyMentorFunction:
                 "error": str(e)
             }
 
-    async def _handle_general_chat(self, message: str, messages: List[Dict], session_id: str, skip_history_save: bool = False) -> Dict[str, Any]:
+    async def _handle_general_chat(self, message: str, messages: List[Dict], session_id: str, user_id: str = None, skip_history_save: bool = False) -> Dict[str, Any]:
         """Handle general chat requests"""
         try:
             response = await client.chat.completions.create(
@@ -310,8 +319,10 @@ class MoneyMentorFunction:
 
             # Save to history in background (user gets response immediately)
             if not skip_history_save:
-                asyncio.create_task(self._save_history(session_id, "user", message))
-                asyncio.create_task(self._save_history(session_id, "assistant", assistant_message))
+                # Validate user_id is a real UUID
+                validated_user_id = require_authenticated_user_id(user_id, "general chat history saving")
+                asyncio.create_task(self._save_history(session_id, "user", message, validated_user_id))
+                asyncio.create_task(self._save_history(session_id, "assistant", assistant_message, validated_user_id))
 
             return {
                 "message": assistant_message,
@@ -346,7 +357,9 @@ class MoneyMentorFunction:
             session = await get_session(session_id)
             if not session:
                 # Create new session and use the generated session_id
-                session = await create_session()
+                # Validate user_id is a real UUID from authentication
+                validated_user_id = require_authenticated_user_id(user_id, "streaming session creation")
+                session = await create_session(user_id=validated_user_id)  # Use validated user_id
                 session_id = session["session_id"]  # Update session_id to use generated one
             
             if not session:
@@ -425,7 +438,7 @@ class MoneyMentorFunction:
                         except json.JSONDecodeError as e:
                             logger.error(f"Failed to parse function arguments: {fn_args_str}, error: {e}")
                             # Fall back to non-streaming approach for calculations
-                            response = await self._handle_calculation_request(query, messages, session_id, skip_history_save=skip_background_tasks)
+                            response = await self._handle_calculation_request(query, messages, session_id, user_id or "default_user", skip_history_save=skip_background_tasks)
                             yield response.get("message", "Error processing calculation").encode("utf-8")
                             return
                     
@@ -465,7 +478,7 @@ class MoneyMentorFunction:
                                 yield chunk.choices[0].delta.content.encode("utf-8")
                     else:
                         # No function call detected, fall back to general chat
-                        response = await self._handle_general_chat(query, messages, session_id, skip_history_save=skip_background_tasks)
+                        response = await self._handle_general_chat(query, messages, session_id, user_id or "default_user", skip_history_save=skip_background_tasks)
                         yield response.get("message", "Error processing request").encode("utf-8")
                         
                 except Exception as e:
@@ -487,7 +500,7 @@ class MoneyMentorFunction:
         # Only save history if background tasks are not being handled by ChatService
         if not skip_background_tasks:
             # Fire-and-forget history saves in background (user gets response immediately)
-            asyncio.create_task(self._save_history(session_id, "user", query))
+            asyncio.create_task(self._save_history(session_id, "user", query, user_id or "default_user"))
             # Use a simple generator that saves assistant response in background
             async def wrapped_generator():
                 collected = []
@@ -496,7 +509,7 @@ class MoneyMentorFunction:
                     yield token
                 full_response = ''.join(collected)
                 # Save assistant response in background
-                asyncio.create_task(self._save_history(session_id, "assistant", full_response))
+                asyncio.create_task(self._save_history(session_id, "assistant", full_response, user_id or "default_user"))
             
             return StreamingResponse(wrapped_generator(), media_type="text/plain")
         else:

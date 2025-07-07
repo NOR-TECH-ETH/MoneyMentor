@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Supabase Configuration
     SUPABASE_URL: str
     SUPABASE_KEY: str
+    SUPABASE_SERVICE_KEY: Optional[str] = None
     
     # Authentication Configuration
     SECRET_KEY: str = "your-secret-key-here-change-in-production"
@@ -66,7 +67,7 @@ class Settings(BaseSettings):
     SUPPORTED_FILE_TYPES: list = ["pdf", "pptx", "docx", "txt"]
     
     # Vector Store Settings
-    VECTOR_STORE_INDEX_NAME: str = "document_chunks"
+    VECTOR_STORE_INDEX_NAME: str = "content_chunks"
     VECTOR_STORE_DIMENSION: int = 1536  # OpenAI embedding dimension
     VECTOR_STORE_METRIC: str = "cosine"
     

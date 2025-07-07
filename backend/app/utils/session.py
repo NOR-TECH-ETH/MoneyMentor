@@ -3,6 +3,7 @@ import json
 import uuid
 from typing import Dict, Any, Optional
 from app.core.database import get_supabase, supabase
+from app.utils.user_validation import require_authenticated_user_id, sanitize_user_id_for_logging
 import logging
 import asyncio
 from functools import lru_cache
@@ -15,12 +16,23 @@ logger = logging.getLogger(__name__)
 _session_cache = {}
 _cache_lock = asyncio.Lock()
 
-async def create_session(session_id: str = None, user_id: str = "default_user") -> Dict[str, Any]:
-    """Create a new session with caching"""
+async def create_session(session_id: str = None, user_id: str = None) -> Dict[str, Any]:
+    """Create a new session with caching - requires authenticated user_id"""
     try:
+        # Validate user_id is provided and is a real UUID from authentication
+        validated_user_id = require_authenticated_user_id(user_id, "session creation")
+        sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+        
+        logger.debug(f"Creating session with session_id: {session_id}, user_id: {sanitized_user_id}")
+        
+        # Validate session_id if provided
+        if session_id and (session_id.startswith('{') or session_id.startswith('[')):
+            logger.error(f"Invalid session_id format - looks like JSON: {session_id}")
+            raise ValueError(f"Invalid session_id format: {session_id}")
+        
         # Store in the correct format matching actual database schema
         db_session_data = {
-            "user_id": user_id,
+            "user_id": validated_user_id,
             "chat_history": [],
             "quiz_history": [],
             "progress": {},
@@ -29,13 +41,21 @@ async def create_session(session_id: str = None, user_id: str = "default_user") 
         }
         
         # Insert into database and get the generated id
-        result = supabase.table("user_sessions").insert(db_session_data).execute()
+        logger.debug(f"Inserting session data: {db_session_data}")
+        try:
+            result = supabase.table("user_sessions").insert(db_session_data).execute()
+            logger.debug(f"Insert result: {result}")
+        except Exception as insert_error:
+            logger.error(f"Database insert failed: {insert_error}")
+            logger.error(f"Insert data was: {db_session_data}")
+            raise
         
         if not result.data:
             raise Exception("Failed to create session in database")
         
         # Get the created session with generated id
         created_session = result.data[0]
+        logger.debug(f"Created session in database: {created_session}")
         actual_session_id = str(created_session["id"])  # Use the database id as session_id
         
         # Create session data in expected format
@@ -161,8 +181,12 @@ async def _store_session_async(session_data: Dict[str, Any]):
     """Store session in database asynchronously"""
     try:
         # Store in the correct format matching actual database schema
+        # Validate user_id is provided and is a real UUID
+        user_id = session_data.get("user_id")
+        validated_user_id = require_authenticated_user_id(user_id, "async session storage")
+        
         db_session_data = {
-            "user_id": session_data.get("user_id", "default_user"),
+            "user_id": validated_user_id,
             "chat_history": session_data.get("chat_history", []),
             "quiz_history": session_data.get("quiz_history", []),
             "progress": session_data.get("progress", {}),

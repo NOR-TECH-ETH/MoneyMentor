@@ -112,7 +112,8 @@ class GoogleSheetsService:
                 'QuizResponses': ['user_id', 'timestamp', 'quiz_id', 'topic_tag', 'selected_option', 'correct', 'session_id'],
                 'EngagementLogs': ['user_id', 'session_id', 'messages_per_session', 'session_duration', 'quizzes_attempted', 'pretest_completed', 'last_activity', 'confidence_rating'],
                 'ChatLogs': ['user_id', 'session_id', 'timestamp', 'message_type', 'message', 'response'],
-                'CourseProgress': ['user_id', 'session_id', 'course_id', 'course_name', 'page_number', 'total_pages', 'completed', 'timestamp']
+                'CourseProgress': ['user_id', 'session_id', 'course_id', 'course_name', 'page_number', 'total_pages', 'completed', 'timestamp'],
+                'UserProfiles': ['first_name', 'last_name', 'email', 'total_chats', 'quizzes_taken', 'day_streak', 'days_active']
             }
             
             for sheet_name, headers in sheet_configs.items():
@@ -381,7 +382,7 @@ MoneyMentor Team
                 return False
             
             # Test access to all required tabs
-            required_tabs = ['QuizResponses', 'EngagementLogs', 'ChatLogs', 'CourseProgress']
+            required_tabs = ['QuizResponses', 'EngagementLogs', 'ChatLogs', 'CourseProgress', 'UserProfiles']
             
             for tab_name in required_tabs:
                 try:
@@ -664,4 +665,184 @@ MoneyMentor Team
             return False
         except Exception as e:
             logger.error(f"Failed to log course progress to Google Sheets: {e}")
-            return False 
+            return False
+
+    async def export_user_profiles_to_sheet(self, user_profiles: List[Dict[str, Any]]) -> bool:
+        """
+        Export user profile data to Google Sheets UserProfiles tab
+        
+        This method creates a single table with user data including:
+        - first_name, last_name, email, total_chats, quizzes_taken, day_streak, days_active
+        
+        Args:
+            user_profiles: List of user profile dictionaries containing:
+                - user_id: str
+                - first_name: str
+                - last_name: str
+                - email: str
+                - total_chats: int
+                - quizzes_taken: int
+                - day_streak: int
+                - days_active: int
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not self.service or not self.spreadsheet_id:
+                logger.warning("Google Sheets service not available")
+                return False
+            
+            # First, ensure the UserProfiles tab exists with proper headers
+            headers = ['first_name', 'last_name', 'email', 'total_chats', 'quizzes_taken', 'day_streak', 'days_active']
+            self._setup_sheet_tab('UserProfiles', headers)
+            
+            # Clear existing data (keep headers)
+            try:
+                # Get the current data to find the last row
+                result = self.service.spreadsheets().values().get(
+                    spreadsheetId=self.spreadsheet_id,
+                    range='UserProfiles!A:A'
+                ).execute()
+                
+                if result.get('values') and len(result['values']) > 1:
+                    # Clear all data except headers (from row 2 onwards)
+                    clear_range = f'UserProfiles!A2:G{len(result["values"])}'
+                    self.service.spreadsheets().values().clear(
+                        spreadsheetId=self.spreadsheet_id,
+                        range=clear_range
+                    ).execute()
+                    logger.info(f"Cleared existing data in UserProfiles tab")
+                    
+            except Exception as e:
+                logger.warning(f"Could not clear existing data: {e}")
+            
+            # Prepare data rows
+            rows_data = []
+            for profile in user_profiles:
+                row_data = [
+                    profile.get('first_name', ''),
+                    profile.get('last_name', ''),
+                    profile.get('email', ''),
+                    str(profile.get('total_chats', 0)),
+                    str(profile.get('quizzes_taken', 0)),
+                    str(profile.get('day_streak', 0)),
+                    str(profile.get('days_active', 0))
+                ]
+                rows_data.append(row_data)
+            
+            if not rows_data:
+                logger.warning("No user profile data to export")
+                return True
+            
+            # Append data to UserProfiles tab
+            body = {
+                'values': rows_data
+            }
+            
+            # Use asyncio timeout for the API call
+            try:
+                # Create a coroutine that wraps the sync API call
+                def make_api_call():
+                    return self.service.spreadsheets().values().append(
+                        spreadsheetId=self.spreadsheet_id,
+                        range='UserProfiles!A:G',
+                        valueInputOption='RAW',
+                        insertDataOption='INSERT_ROWS',
+                        body=body
+                    ).execute()
+                
+                # Run the API call with timeout
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(make_api_call),
+                    timeout=10.0  # Longer timeout for bulk export
+                )
+                
+                logger.info(f"User profiles exported to Google Sheets: {result.get('updates', {}).get('updatedRows', 0)} rows updated")
+                return True
+                
+            except asyncio.TimeoutError:
+                logger.error("Google Sheets user profiles export timed out after 10 seconds")
+                return False
+            except Exception as api_error:
+                logger.error(f"Google Sheets API error: {api_error}")
+                return False
+            
+        except HttpError as e:
+            logger.error(f"Google Sheets API error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to export user profiles to Google Sheets: {e}")
+            return False
+
+    async def get_all_user_profiles_for_export(self) -> List[Dict[str, Any]]:
+        """
+        Helper method to fetch all user profiles with user information for export
+        
+        Returns:
+            List of user profile dictionaries ready for Google Sheets export
+        """
+        try:
+            from app.core.database import get_supabase
+            
+            supabase = get_supabase()
+            
+            # Get all user profiles with user information
+            result = supabase.table('user_profiles').select(
+                'user_id, total_chats, quizzes_taken, day_streak, days_active'
+            ).execute()
+            
+            user_profiles = []
+            for profile in result.data:
+                user_id = profile['user_id']
+                
+                try:
+                    # Get user information (first_name, last_name, email)
+                    user_result = supabase.table('users').select(
+                        'first_name, last_name, email'
+                    ).eq('id', user_id).single().execute()
+                    
+                    if user_result.data:
+                        user_info = user_result.data
+                        user_profiles.append({
+                            'user_id': user_id,
+                            'first_name': user_info.get('first_name', ''),
+                            'last_name': user_info.get('last_name', ''),
+                            'email': user_info.get('email', ''),
+                            'total_chats': profile.get('total_chats', 0),
+                            'quizzes_taken': profile.get('quizzes_taken', 0),
+                            'day_streak': profile.get('day_streak', 0),
+                            'days_active': profile.get('days_active', 0)
+                        })
+                    else:
+                        # Add profile without user details if user not found
+                        user_profiles.append({
+                            'user_id': user_id,
+                            'first_name': 'Unknown',
+                            'last_name': 'User',
+                            'email': '',
+                            'total_chats': profile.get('total_chats', 0),
+                            'quizzes_taken': profile.get('quizzes_taken', 0),
+                            'day_streak': profile.get('day_streak', 0),
+                            'days_active': profile.get('days_active', 0)
+                        })
+                except Exception as user_error:
+                    logger.warning(f"Could not get user details for {user_id}: {user_error}")
+                    # Add profile without user details
+                    user_profiles.append({
+                        'user_id': user_id,
+                        'first_name': 'Unknown',
+                        'last_name': 'User',
+                        'email': '',
+                        'total_chats': profile.get('total_chats', 0),
+                        'quizzes_taken': profile.get('quizzes_taken', 0),
+                        'day_streak': profile.get('day_streak', 0),
+                        'days_active': profile.get('days_active', 0)
+                    })
+            
+            logger.info(f"Retrieved {len(user_profiles)} user profiles for export")
+            return user_profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get user profiles for export: {e}")
+            return [] 

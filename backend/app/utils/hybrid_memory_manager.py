@@ -8,6 +8,7 @@ from functools import lru_cache
 
 from app.core.database import supabase
 from app.core.config import settings
+from app.utils.user_validation import require_authenticated_user_id, sanitize_user_id_for_logging
 from langchain_openai import OpenAIEmbeddings
 
 logger = logging.getLogger(__name__)
@@ -78,14 +79,18 @@ class HybridMemoryManager:
     async def add_to_memory(self, message: Dict[str, Any], user_id: str, session_id: str):
         """Add message to user_sessions ONLY (OPTIMIZED FOR SPEED)"""
         try:
+            # Validate user_id is a real UUID from authentication
+            validated_user_id = require_authenticated_user_id(user_id, "hybrid memory operation")
+            sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+            
             content = message.get('content', '')
             role = message.get('role', '')
             timestamp = message.get('timestamp', datetime.now(timezone.utc).isoformat())
             
             # 1. Get current session and chat history
-            session = await self._get_session(user_id)
+            session = await self._get_session(validated_user_id)
             if not session:
-                logger.warning(f"Session for user {user_id} not found - this is normal for new sessions")
+                logger.warning(f"Session for user {sanitized_user_id} not found - this is normal for new sessions")
                 return
             
             # Get chat history from session_data JSONB field
@@ -107,7 +112,7 @@ class HybridMemoryManager:
                 chat_history = chat_history[-4:]  # Keep only last 4 messages
             
             # 4. Update user_sessions with new chat history
-            await self._update_session(user_id, {"session_data": {"chat_history": chat_history}})
+            await self._update_session(validated_user_id, {"chat_history": chat_history})
             
             # 5. COMMENTED OUT: Vector DB storage (causing performance bottleneck)
             # if moved_messages:
@@ -121,21 +126,16 @@ class HybridMemoryManager:
             logger.error(f"Failed to add message to optimized memory: {e}")
     
     async def _get_session(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get session from user_sessions table by user_id or session_id"""
+        """Get session from user_sessions table by user_id"""
         try:
-            # First try to find by user_id
-            result = supabase.table("user_sessions").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+            # Validate user_id is a real UUID
+            validated_user_id = require_authenticated_user_id(user_id, "session retrieval")
+            sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+            
+            # Find by user_id
+            result = supabase.table("user_sessions").select("*").eq("user_id", validated_user_id).order("created_at", desc=True).limit(1).execute()
             if result.data:
                 return result.data[0]
-            
-            # If not found by user_id, try to find by session_id in session_data JSON
-            # The session_id is stored in the session_data JSONB field
-            result = supabase.table("user_sessions").select("*").execute()
-            if result.data:
-                for session in result.data:
-                    session_data = session.get("session_data", {})
-                    if session_data.get("session_id") == user_id:
-                        return session
             
             return None
         except Exception as e:
@@ -143,29 +143,20 @@ class HybridMemoryManager:
             return None
     
     async def _update_session(self, user_id: str, data: Dict[str, Any]):
-        """Update session in user_sessions table by user_id or session_id"""
+        """Update session in user_sessions table by user_id"""
         try:
+            # Validate user_id is a real UUID
+            validated_user_id = require_authenticated_user_id(user_id, "session update")
+            sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+            
             data["updated_at"] = datetime.now(timezone.utc).isoformat()
             
-            # First try to update by user_id
-            result = supabase.table("user_sessions").update(data).eq("user_id", user_id).execute()
+            # Update by user_id
+            result = supabase.table("user_sessions").update(data).eq("user_id", validated_user_id).execute()
             if result.data:
                 return
             
-            # If not found by user_id, try to find and update by session_id in session_data JSON
-            # Get all sessions and find the one with matching session_id
-            all_sessions = supabase.table("user_sessions").select("*").execute()
-            if all_sessions.data:
-                for session in all_sessions.data:
-                    session_data = session.get("session_data", {})
-                    if session_data.get("session_id") == user_id:
-                        # Update this session
-                        result = supabase.table("user_sessions").update(data).eq("id", session["id"]).execute()
-                        if result.data:
-                            return
-                        break
-            
-            raise ValueError(f"Failed to update session for user/session {user_id}")
+            raise ValueError(f"Failed to update session for user {sanitized_user_id}")
         except Exception as e:
             logger.error(f"Failed to update session: {e}")
             raise
@@ -173,6 +164,10 @@ class HybridMemoryManager:
     async def _add_to_vector_db(self, message: Dict[str, Any], user_id: str, session_id: str):
         """Add message to vector database for long-term storage"""
         try:
+            # Validate user_id is a real UUID
+            validated_user_id = require_authenticated_user_id(user_id, "vector database storage")
+            sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+            
             content = message.get('content', '')
             role = message.get('role', '')
             timestamp = message.get('timestamp', datetime.now(timezone.utc).isoformat())
@@ -186,7 +181,7 @@ class HybridMemoryManager:
             # Store in vector database
             memory_data = {
                 'id': f"{session_id}_{timestamp}",
-                'user_id': user_id,
+                'user_id': validated_user_id,
                 'session_id': session_id,
                 'content': content,
                 'role': role,
@@ -212,11 +207,15 @@ class HybridMemoryManager:
     async def get_context_for_query(self, query: str, user_id: str, session_id: str) -> List[Dict[str, Any]]:
         """Get context using ONLY recent messages from user_sessions (OPTIMIZED FOR SPEED)"""
         try:
+            # Validate user_id is a real UUID
+            validated_user_id = require_authenticated_user_id(user_id, "context retrieval")
+            sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+            
             # OPTIMIZATION: Skip vector similarity search for speed testing
             # Only use recent messages from user_sessions table
             
             # 1. Get recent messages from user_sessions (fast, synchronous)
-            recent_messages = await self._get_sliding_window_messages(user_id)
+            recent_messages = await self._get_sliding_window_messages(validated_user_id)
             
             # 2. COMMENTED OUT: Vector similarity search (causing 7.876s bottleneck)
             # similar_messages = []
@@ -242,13 +241,15 @@ class HybridMemoryManager:
     async def _get_sliding_window_messages(self, user_id: str) -> List[Dict[str, Any]]:
         """Get recent messages from user_sessions table"""
         try:
-            session = await self._get_session(user_id)
+            # Validate user_id is a real UUID
+            validated_user_id = require_authenticated_user_id(user_id, "sliding window retrieval")
+            
+            session = await self._get_session(validated_user_id)
             if not session:
                 return []
             
-            # Get chat history from session_data JSONB field
-            session_data = session.get("session_data", {})
-            chat_history = session_data.get("chat_history", [])
+            # Get chat history from chat_history JSONB field
+            chat_history = session.get("chat_history", [])
             
             messages = []
             for msg in chat_history:
@@ -269,6 +270,9 @@ class HybridMemoryManager:
     async def _get_similar_messages(self, query: str, user_id: str) -> List[Dict[str, Any]]:
         """Get similar messages using vector similarity"""
         try:
+            # Validate user_id is a real UUID
+            validated_user_id = require_authenticated_user_id(user_id, "similar messages retrieval")
+            
             # Get query embedding
             query_embedding = await self.get_embedding(query)
             if not query_embedding:
@@ -277,7 +281,7 @@ class HybridMemoryManager:
             # Get all user messages from vector DB
             result = supabase.table('vector_memory')\
                 .select('*')\
-                .eq('user_id', user_id)\
+                .eq('user_id', validated_user_id)\
                 .execute()
             
             if not result.data:
@@ -400,8 +404,12 @@ class HybridMemoryManager:
     async def clear_session(self, user_id: str):
         """Clear chat history for a user"""
         try:
-            await self._update_session(user_id, {"chat_history": []})
-            logger.info(f"Cleared chat history for user {user_id}")
+            # Validate user_id is a real UUID
+            validated_user_id = require_authenticated_user_id(user_id, "session clearing")
+            sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+            
+            await self._update_session(validated_user_id, {"chat_history": []})
+            logger.info(f"Cleared chat history for user {sanitized_user_id}")
         except Exception as e:
             logger.error(f"Failed to clear session: {e}")
     
@@ -423,7 +431,11 @@ class HybridMemoryManager:
     async def get_memory_stats(self, user_id: str) -> Dict[str, Any]:
         """Get memory statistics"""
         try:
-            session = await self._get_session(user_id)
+            # Validate user_id is a real UUID
+            validated_user_id = require_authenticated_user_id(user_id, "memory stats retrieval")
+            sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
+            
+            session = await self._get_session(validated_user_id)
             if not session:
                 return {
                     'sliding_window_size': 0,

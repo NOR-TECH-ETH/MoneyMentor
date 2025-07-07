@@ -102,7 +102,7 @@ async def process_message_streaming(
         print(f"   📋 Step 1: Getting session and chat history...")
         session = await get_session(request.session_id)
         if not session:
-            session = await create_session(request.session_id)
+            session = await create_session(request.session_id, current_user["id"])
             if not session:
                 raise HTTPException(status_code=500, detail="Failed to create session for streaming")
         

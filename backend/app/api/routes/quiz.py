@@ -13,6 +13,7 @@ from app.core.database import get_supabase
 from app.core.auth import get_current_active_user
 from datetime import datetime
 from app.utils.session import get_session, create_session
+from app.utils.user_validation import require_authenticated_user_id, sanitize_user_id_for_logging
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 from app.core.config import settings
@@ -41,8 +42,12 @@ async def generate_quiz(
         session = await get_session(request.session_id)
         if not session:
             logger.debug("creating new session✅session✅session✅session✅session✅")
-            # If session does not exist, create it (frontend always provides a valid session_id)
-            session = await create_session(request.session_id)
+            logger.debug(f"Session ID from request: {request.session_id}")
+            logger.debug(f"User ID from token: {current_user['id']}")
+            # If session does not exist, create it with the actual user_id
+            # Validate user_id is a real UUID from authentication
+            validated_user_id = require_authenticated_user_id(current_user["id"], "quiz session creation")
+            session = await create_session(request.session_id, validated_user_id)
         chat_history = session.get("chat_history", [])
 
         quiz_service = QuizService()
@@ -530,8 +535,8 @@ async def get_quiz_history(current_user: dict = Depends(get_current_active_user)
         raise HTTPException(status_code=500, detail="Failed to get quiz history")
 
 @router.post("/session/")
-async def create_new_session():
+async def create_new_session(current_user: dict = Depends(get_current_active_user)):
     """Create a new user session and return session data"""
     session_id = str(uuid.uuid4())
-    session = await create_session(session_id)
+    session = await create_session(session_id, current_user["id"])
     return session
