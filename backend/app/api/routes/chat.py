@@ -20,7 +20,8 @@ from app.utils.session import (
     add_quiz_response,
     update_progress,
     update_session,
-    get_all_user_sessions
+    get_all_user_sessions,
+    delete_session
 )
 from app.services.content_service import ContentService
 from app.models.schemas import ChatMessageRequest
@@ -247,6 +248,39 @@ async def clear_chat_history(
         
     except Exception as e:
         logger.error(f"Failed to clear chat history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/session/{session_id}")
+async def delete_chat_session(
+    session_id: str,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Delete a chat session completely"""
+    try:
+        # Verify the session belongs to the current user
+        session = await get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Check if the session belongs to the current user
+        if session.get("user_id") != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied - session does not belong to current user")
+        
+        # Delete the session completely
+        success = await delete_session(session_id)
+        
+        if success:
+            return {
+                "status": "success", 
+                "message": f"Session {session_id} deleted successfully"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete session")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete chat session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/history/")
