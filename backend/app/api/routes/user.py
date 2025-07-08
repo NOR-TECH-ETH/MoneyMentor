@@ -5,10 +5,12 @@ from datetime import timedelta
 
 from app.models.schemas import (
     UserCreate, UserLogin, UserUpdate, UserResponse, UserProfileResponse,
-    AuthResponse, PasswordChange, PasswordReset, PasswordResetConfirm
+    AuthResponse, TokenRefresh, TokenRefreshResponse, LogoutRequest,
+    PasswordChange, PasswordReset, PasswordResetConfirm
 )
 from app.core.auth import (
     authenticate_user, create_user, get_current_active_user, create_access_token,
+    create_refresh_token, verify_refresh_token, revoke_refresh_token, revoke_all_user_tokens,
     update_user, change_user_password, get_user_by_email
 )
 from app.services.user_service import UserService
@@ -55,11 +57,15 @@ async def register_user(
             data={"sub": user["id"]}, expires_delta=access_token_expires
         )
         
+        # Create refresh token
+        refresh_token = create_refresh_token(user["id"])
+        
         # Get user profile
         profile = await user_service.get_user_profile(user["id"])
         
         return AuthResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
             user=UserResponse(**user),
             profile=profile
@@ -104,11 +110,15 @@ async def login_user(
             data={"sub": user["id"]}, expires_delta=access_token_expires
         )
         
+        # Create refresh token
+        refresh_token = create_refresh_token(user["id"])
+        
         # Get user profile
         profile = await user_service.get_user_profile(user["id"])
         
         return AuthResponse(
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
             user=UserResponse(**user),
             profile=profile
@@ -122,6 +132,32 @@ async def login_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed"
         )
+
+@router.post("/refresh", response_model=TokenRefreshResponse)
+async def refresh_token_endpoint(token_refresh: TokenRefresh):
+    """Refresh access token using a valid refresh token"""
+    verified = verify_refresh_token(token_refresh.refresh_token)
+    if not verified:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token"
+        )
+    user_id = verified["user_id"]
+    user = verified["user"]
+    # Issue new access token
+    access_token_expires = timedelta(minutes=30)
+    access_token = create_access_token(
+        data={"sub": user_id}, expires_delta=access_token_expires
+    )
+    # Issue new refresh token (rotate)
+    new_refresh_token = create_refresh_token(user_id)
+    # Revoke the old refresh token
+    revoke_refresh_token(token_refresh.refresh_token)
+    return TokenRefreshResponse(
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+        token_type="bearer"
+    )
 
 @router.get("/profile", response_model=Dict[str, Any])
 async def get_profile(
@@ -348,3 +384,59 @@ async def get_leaderboard(
 async def get_current_user_info(current_user: dict = Depends(get_current_active_user)):
     """Get current user information"""
     return UserResponse(**current_user) 
+
+@router.post("/logout")
+async def logout_user(logout_data: LogoutRequest):
+    """Logout user by revoking refresh token"""
+    try:
+        # Verify the refresh token first to ensure it's valid
+        verified = verify_refresh_token(logout_data.refresh_token)
+        if not verified:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+        
+        # Revoke the refresh token
+        success = revoke_refresh_token(logout_data.refresh_token)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to revoke token"
+            )
+        
+        return {"message": "Successfully logged out"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Logout failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Logout failed"
+        )
+
+@router.post("/logout/all")
+async def logout_all_sessions(
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Logout user from all sessions by revoking all refresh tokens"""
+    try:
+        # Revoke all refresh tokens for the user
+        success = revoke_all_user_tokens(current_user["id"])
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to revoke all tokens"
+            )
+        
+        return {"message": "Successfully logged out from all sessions"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Logout all sessions failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Logout all sessions failed"
+        ) 

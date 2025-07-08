@@ -50,6 +50,22 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at timestamp with time zone DEFAULT now()
 );
 
+-- Refresh tokens table
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id uuid REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(255) NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    is_revoked BOOLEAN DEFAULT false,
+    created_at timestamp with time zone DEFAULT now(),
+    UNIQUE(token_hash)
+);
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
+
 -- User profiles table for additional data
 CREATE TABLE IF NOT EXISTS user_profiles (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),

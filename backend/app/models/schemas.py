@@ -518,9 +518,24 @@ class UserProfileUpdate(BaseModel):
 class AuthResponse(BaseModel):
     """Schema for authentication response"""
     access_token: str = Field(..., description="JWT access token")
+    refresh_token: str = Field(..., description="Refresh token")
     token_type: str = Field(default="bearer", description="Token type")
     user: UserResponse = Field(..., description="User information")
     profile: Optional[UserProfileResponse] = Field(None, description="User profile statistics")
+
+class TokenRefresh(BaseModel):
+    """Schema for token refresh request"""
+    refresh_token: str = Field(..., description="Refresh token")
+
+class TokenRefreshResponse(BaseModel):
+    """Schema for token refresh response"""
+    access_token: str = Field(..., description="New JWT access token")
+    refresh_token: str = Field(..., description="New refresh token")
+    token_type: str = Field(default="bearer", description="Token type")
+
+class LogoutRequest(BaseModel):
+    """Schema for logout request"""
+    refresh_token: str = Field(..., description="Refresh token to revoke")
 
 class PasswordChange(BaseModel):
     """Schema for password change"""

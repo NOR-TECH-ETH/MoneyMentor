@@ -16,7 +16,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # JWT token configuration
 SECRET_KEY = getattr(settings, 'SECRET_KEY', 'your-secret-key-here-change-in-production')
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = getattr(settings, 'ACCESS_TOKEN_EXPIRE_MINUTES', 60 * 24 * 30)  # 30 days default
+ACCESS_TOKEN_EXPIRE_MINUTES = getattr(settings, 'ACCESS_TOKEN_EXPIRE_MINUTES', 30)  # 30 minutes default
+REFRESH_TOKEN_EXPIRE_DAYS = getattr(settings, 'REFRESH_TOKEN_EXPIRE_DAYS', 7)  # 7 days default
 
 # Security scheme
 security = HTTPBearer()
@@ -40,6 +41,119 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+def create_refresh_token(user_id: str) -> str:
+    """Create a refresh token and store it in database"""
+    # Generate a random refresh token
+    import secrets
+    refresh_token = secrets.token_urlsafe(32)
+    
+    # Hash the token for storage
+    token_hash = pwd_context.hash(refresh_token)
+    
+    # Calculate expiration
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    # Store in database
+    supabase = get_supabase()
+    try:
+        supabase.table('refresh_tokens').insert({
+            'user_id': user_id,
+            'token_hash': token_hash,
+            'expires_at': expires_at.isoformat()
+        }).execute()
+        
+        return refresh_token
+    except Exception as e:
+        logger.error(f"Error storing refresh token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create refresh token"
+        )
+
+def verify_refresh_token(refresh_token: str) -> Optional[dict]:
+    """Verify a refresh token and return user info"""
+    supabase = get_supabase()
+    try:
+        # Get all refresh tokens (we need to check all since we don't know the user_id)
+        result = supabase.table('refresh_tokens').select('*').execute()
+        
+        for token_record in result.data:
+            try:
+                # Check if token matches and is valid
+                if pwd_context.verify(refresh_token, token_record['token_hash']):
+                    # Check if revoked
+                    if token_record['is_revoked']:
+                        continue
+                    
+                    # Check expiration - handle different datetime formats
+                    expires_at = token_record['expires_at']
+                    now = datetime.utcnow()
+                    
+                    if isinstance(expires_at, str):
+                        # Remove timezone info for comparison
+                        if 'T' in expires_at:
+                            expires_at = expires_at.split('T')[0] + ' ' + expires_at.split('T')[1]
+                        if expires_at.endswith('Z'):
+                            expires_at = expires_at[:-1]
+                        if '+' in expires_at:
+                            expires_at = expires_at.split('+')[0]
+                        
+                        try:
+                            expires_datetime = datetime.fromisoformat(expires_at)
+                        except:
+                            # Try parsing as regular datetime
+                            expires_datetime = datetime.strptime(expires_at, '%Y-%m-%d %H:%M:%S')
+                    else:
+                        expires_datetime = expires_at
+                    
+                    if expires_datetime > now:
+                        # Get user info
+                        user_result = supabase.table('users').select('*').eq('id', token_record['user_id']).single().execute()
+                        if user_result.data and user_result.data.get('is_active', True):
+                            return {
+                                'user_id': token_record['user_id'],
+                                'user': user_result.data
+                            }
+            except Exception as token_error:
+                logger.error(f"Error processing token record: {token_error}")
+                continue
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error verifying refresh token: {e}")
+        return None
+
+def revoke_refresh_token(refresh_token: str) -> bool:
+    """Revoke a refresh token"""
+    supabase = get_supabase()
+    try:
+        # Find and revoke the token
+        result = supabase.table('refresh_tokens').select('*').execute()
+        
+        for token_record in result.data:
+            if pwd_context.verify(refresh_token, token_record['token_hash']):
+                supabase.table('refresh_tokens').update({
+                    'is_revoked': True
+                }).eq('id', token_record['id']).execute()
+                return True
+        
+        return False
+    except Exception as e:
+        logger.error(f"Error revoking refresh token: {e}")
+        return False
+
+def revoke_all_user_tokens(user_id: str) -> bool:
+    """Revoke all refresh tokens for a user"""
+    supabase = get_supabase()
+    try:
+        supabase.table('refresh_tokens').update({
+            'is_revoked': True
+        }).eq('user_id', user_id).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error revoking user tokens: {e}")
+        return False
 
 def verify_token(token: str) -> Optional[dict]:
     """Verify and decode a JWT token"""
