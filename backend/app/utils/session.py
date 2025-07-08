@@ -40,6 +40,7 @@ async def create_session(session_id: str = None, user_id: str = None, initial_ch
         
         # Store in the correct format matching actual database schema
         db_session_data = {
+            "session_id": session_id,  # Use the provided session_id
             "user_id": validated_user_id,
             "chat_history": chat_history,  # Use provided chat history instead of empty array
             "progress": {},
@@ -63,11 +64,13 @@ async def create_session(session_id: str = None, user_id: str = None, initial_ch
         # Get the created session with generated id
         created_session = result.data[0]
         logger.debug(f"Created session in database: {created_session}")
-        actual_session_id = str(created_session["id"])  # Use the database id as session_id
+        
+        # Use the provided session_id as the primary identifier
+        actual_session_id = session_id if session_id else str(created_session["id"])
         
         # Create session data in expected format
         session_data = {
-            "session_id": actual_session_id,  # Use database id as session_id
+            "session_id": actual_session_id,  # Use provided session_id or database id as fallback
             "user_id": user_id,
             "chat_history": chat_history,  # Use the same chat history
             "quiz_history": [],
@@ -97,14 +100,27 @@ async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
             if session_id_str in _session_cache:
                 return _session_cache[session_id_str]
         
-        # If not in cache, get from database using id column
-        result = supabase.table("user_sessions").select("*").eq("id", session_id_str).execute()
+        # If not in cache, get from database using session_id column first, then id column as fallback
+        result = supabase.table("user_sessions").select("*").eq("session_id", session_id_str).execute()
+        
+        if not result.data or len(result.data) == 0:
+            # Fallback to searching by id column (for backward compatibility)
+            # BUT only if the session_id looks like a UUID (to avoid false matches)
+            import re
+            uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+            
+            if uuid_pattern.match(session_id_str):
+                result = supabase.table("user_sessions").select("*").eq("id", session_id_str).execute()
+                if result.data and len(result.data) > 0:
+                    logger.info(f"Found session using id column fallback for UUID session_id: {session_id_str}")
+            else:
+                logger.debug(f"Session not found and session_id '{session_id_str}' is not a UUID, skipping id column fallback")
         
         if result.data and len(result.data) > 0:
             # Convert database format to expected session format
             db_data = result.data[0]
             session_data = {
-                "session_id": str(db_data["id"]),  # Use database id as session_id
+                "session_id": db_data.get("session_id") or str(db_data["id"]),  # Use session_id if available, otherwise database id
                 "user_id": db_data.get("user_id"),
                 "chat_history": db_data.get("chat_history", []),
                 "progress": db_data.get("progress", {}),
@@ -134,13 +150,27 @@ async def update_session(session_id: str, data: Dict[str, Any]) -> Dict[str, Any
                 _session_cache[session_id].update(data)
                 updated_session = _session_cache[session_id]
             else:
-                # If not in cache, get from database first
-                result = supabase.table("user_sessions").select("*").eq("id", session_id).execute()
+                # If not in cache, get from database first using session_id column, then id column as fallback
+                result = supabase.table("user_sessions").select("*").eq("session_id", session_id).execute()
+                
+                if not result.data or len(result.data) == 0:
+                    # Fallback to searching by id column (for backward compatibility)
+                    # BUT only if the session_id looks like a UUID (to avoid false matches)
+                    import re
+                    uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+                    
+                    if uuid_pattern.match(session_id):
+                        result = supabase.table("user_sessions").select("*").eq("id", session_id).execute()
+                        if result.data and len(result.data) > 0:
+                            logger.info(f"Found session using id column fallback for UUID session_id: {session_id}")
+                    else:
+                        logger.debug(f"Session not found and session_id '{session_id}' is not a UUID, skipping id column fallback")
+                
                 if result.data and len(result.data) > 0:
                     db_data = result.data[0]
                     # Convert database format to session format
                     session_data = {
-                        "session_id": str(db_data["id"]),
+                        "session_id": db_data.get("session_id") or str(db_data["id"]),  # Use session_id if available, otherwise database id
                         "user_id": db_data.get("user_id"),
                         "chat_history": db_data.get("chat_history", []),
                         "progress": db_data.get("progress", {}),
@@ -165,7 +195,7 @@ async def update_session(session_id: str, data: Dict[str, Any]) -> Dict[str, Any
 async def _update_session_async(session_id: str, data: Dict[str, Any]):
     """Update session in database asynchronously"""
     try:
-        # Update the session using id column
+        # Update the session using session_id column first, then id column as fallback
         update_data = {
             "updated_at": datetime.utcnow().isoformat()
         }
@@ -176,7 +206,23 @@ async def _update_session_async(session_id: str, data: Dict[str, Any]):
         if "progress" in data:
             update_data["progress"] = data["progress"]
         
-        supabase.table("user_sessions").update(update_data).eq("id", session_id).execute()
+        # Try to update using session_id first
+        result = supabase.table("user_sessions").update(update_data).eq("session_id", session_id).execute()
+        
+        # If no rows were updated, try using id column as fallback
+        # BUT only if the session_id looks like a UUID (to avoid false matches)
+        if not result.data or len(result.data) == 0:
+            import re
+            uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+            
+            # Only use id column fallback if session_id is actually a UUID
+            if uuid_pattern.match(session_id):
+                result = supabase.table("user_sessions").update(update_data).eq("id", session_id).execute()
+                if result.data and len(result.data) > 0:
+                    logger.info(f"Updated session using id column fallback for UUID session_id: {session_id}")
+            else:
+                logger.warning(f"Session not found and session_id '{session_id}' is not a UUID, skipping id column fallback")
+            
     except Exception as e:
         logger.warning(f"Failed to update session in database: {e}")
 
@@ -189,6 +235,7 @@ async def _store_session_async(session_data: Dict[str, Any]):
         validated_user_id = require_authenticated_user_id(user_id, "async session storage")
         
         db_session_data = {
+            "session_id": session_data.get("session_id"),  # Include session_id if provided
             "user_id": validated_user_id,
             "chat_history": session_data.get("chat_history", []),
             "progress": session_data.get("progress", {}),
@@ -206,8 +253,22 @@ async def delete_session(session_id: str) -> bool:
         async with _cache_lock:
             _session_cache.pop(session_id, None)
         
-        # Delete from database using id column
-        result = supabase.table("user_sessions").delete().eq("id", session_id).execute()
+        # Delete from database using session_id column first, then id column as fallback
+        result = supabase.table("user_sessions").delete().eq("session_id", session_id).execute()
+        
+        # If no rows were deleted, try using id column as fallback
+        # BUT only if the session_id looks like a UUID (to avoid false matches)
+        if not result.data or len(result.data) == 0:
+            import re
+            uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+            
+            if uuid_pattern.match(session_id):
+                result = supabase.table("user_sessions").delete().eq("id", session_id).execute()
+                if result.data and len(result.data) > 0:
+                    logger.info(f"Deleted session using id column fallback for UUID session_id: {session_id}")
+            else:
+                logger.warning(f"Session not found for deletion and session_id '{session_id}' is not a UUID, skipping id column fallback")
+            
         return bool(result.data)
     except Exception as e:
         logger.error(f"Failed to delete session: {e}")
@@ -346,7 +407,7 @@ async def get_all_user_sessions(user_id: str) -> List[Dict[str, Any]]:
         sessions = []
         for db_data in result.data:
             session_data = {
-                "session_id": str(db_data["id"]),  # Use database id as session_id
+                "session_id": db_data.get("session_id") or str(db_data["id"]),  # Use session_id if available, otherwise database id
                 "user_id": db_data.get("user_id"),
                 "chat_history": db_data.get("chat_history", []),
                 "progress": db_data.get("progress", {}),
@@ -383,7 +444,7 @@ async def get_recent_user_sessions(user_id: str, hours: int = 24) -> List[Dict[s
         sessions = []
         for db_data in result.data:
             session_data = {
-                "session_id": str(db_data["id"]),
+                "session_id": db_data.get("session_id") or str(db_data["id"]),  # Use session_id if available, otherwise database id
                 "user_id": db_data.get("user_id"),
                 "chat_history": db_data.get("chat_history", []),
                 "progress": db_data.get("progress", {}),

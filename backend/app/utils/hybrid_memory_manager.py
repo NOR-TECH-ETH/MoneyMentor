@@ -111,8 +111,8 @@ class HybridMemoryManager:
             if len(chat_history) > 4:
                 chat_history = chat_history[-4:]  # Keep only last 4 messages
             
-            # 4. Update user_sessions with new chat history
-            await self._update_session(validated_user_id, {"chat_history": chat_history})
+            # 4. Update user_sessions with new chat history (target specific session)
+            await self._update_session(validated_user_id, {"chat_history": chat_history}, session_id)
             
             # 5. COMMENTED OUT: Vector DB storage (causing performance bottleneck)
             # if moved_messages:
@@ -142,8 +142,8 @@ class HybridMemoryManager:
             logger.error(f"Failed to get session: {e}")
             return None
     
-    async def _update_session(self, user_id: str, data: Dict[str, Any]):
-        """Update session in user_sessions table by user_id"""
+    async def _update_session(self, user_id: str, data: Dict[str, Any], session_id: str = None):
+        """Update session in user_sessions table by session_id (preferred) or user_id (fallback)"""
         try:
             # Validate user_id is a real UUID
             validated_user_id = require_authenticated_user_id(user_id, "session update")
@@ -151,9 +151,20 @@ class HybridMemoryManager:
             
             data["updated_at"] = datetime.now(timezone.utc).isoformat()
             
-            # Update by user_id
+            # Prefer session_id if provided, otherwise fall back to user_id
+            if session_id:
+                # Update by session_id (targets specific session)
+                result = supabase.table("user_sessions").update(data).eq("session_id", session_id).execute()
+                if result.data:
+                    logger.debug(f"Updated session {session_id} for user {sanitized_user_id}")
+                    return
+                else:
+                    logger.warning(f"Session {session_id} not found, falling back to user_id update")
+            
+            # Fallback: Update by user_id (updates all sessions for user - NOT RECOMMENDED)
             result = supabase.table("user_sessions").update(data).eq("user_id", validated_user_id).execute()
             if result.data:
+                logger.warning(f"Updated {len(result.data)} sessions for user {sanitized_user_id} (fallback mode)")
                 return
             
             raise ValueError(f"Failed to update session for user {sanitized_user_id}")
@@ -401,15 +412,18 @@ class HybridMemoryManager:
         
         return min(score, 1.0)
     
-    async def clear_session(self, user_id: str):
-        """Clear chat history for a user"""
+    async def clear_session(self, user_id: str, session_id: str = None):
+        """Clear chat history for a user (specific session if session_id provided)"""
         try:
             # Validate user_id is a real UUID
             validated_user_id = require_authenticated_user_id(user_id, "session clearing")
             sanitized_user_id = sanitize_user_id_for_logging(validated_user_id)
             
-            await self._update_session(validated_user_id, {"chat_history": []})
-            logger.info(f"Cleared chat history for user {sanitized_user_id}")
+            await self._update_session(validated_user_id, {"chat_history": []}, session_id)
+            if session_id:
+                logger.info(f"Cleared chat history for session {session_id} of user {sanitized_user_id}")
+            else:
+                logger.info(f"Cleared chat history for all sessions of user {sanitized_user_id}")
         except Exception as e:
             logger.error(f"Failed to clear session: {e}")
     

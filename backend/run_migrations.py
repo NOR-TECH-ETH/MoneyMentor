@@ -23,7 +23,7 @@ async def run_migrations():
     try:
         supabase = get_supabase()
         
-        # Read the migrations file
+        # Read the main migrations file
         migrations_file = backend_dir / "app" / "core" / "migrations.sql"
         
         if not migrations_file.exists():
@@ -32,6 +32,17 @@ async def run_migrations():
         
         with open(migrations_file, 'r') as f:
             migrations_sql = f.read()
+        
+        # Read the session schema migration file
+        session_migration_file = backend_dir / "app" / "core" / "migrate_session_schema.sql"
+        
+        if session_migration_file.exists():
+            with open(session_migration_file, 'r') as f:
+                session_migrations_sql = f.read()
+            migrations_sql += "\n" + session_migrations_sql
+            print("📋 Session schema migration included")
+        else:
+            print("⚠️  Session schema migration file not found, skipping")
         
         print("📋 Executing migrations...")
         

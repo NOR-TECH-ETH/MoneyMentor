@@ -9,6 +9,7 @@ from datetime import datetime
 
 from app.agents.function import money_mentor_function
 from app.core.config import settings
+from app.core.auth import get_current_active_user
 from app.utils.session import (
     create_session,
     get_session,
@@ -30,6 +31,7 @@ def get_chat_service() -> ChatService:
 @router.post("/stream")
 async def process_message_streaming(
     request: ChatMessageRequest,
+    current_user: dict = Depends(get_current_active_user),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """
@@ -55,7 +57,10 @@ async def process_message_streaming(
             session = await get_session(request.session_id)
             if not session:
                 try:
-                    session = await create_session(request.session_id)
+                    session = await create_session(
+                        session_id=request.session_id,
+                        user_id=current_user["id"]
+                    )
                     if not session:
                         raise HTTPException(status_code=500, detail="Failed to create session")
                     logger.info(f"Created new session: {request.session_id}")
@@ -160,6 +165,7 @@ async def process_message_streaming(
 @router.post("/stream/simple")
 async def process_message_streaming_simple(
     request: ChatMessageRequest,
+    current_user: dict = Depends(get_current_active_user),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """
@@ -199,6 +205,7 @@ async def process_message_streaming_simple(
 @router.post("/stream/progressive")
 async def process_message_streaming_progressive(
     request: ChatMessageRequest,
+    current_user: dict = Depends(get_current_active_user),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """
@@ -215,7 +222,10 @@ async def process_message_streaming_progressive(
             yield f"data: {json.dumps({'type': 'status', 'step': 2, 'message': 'Checking session...'})}\n\n"
             session = await get_session(request.session_id)
             if not session:
-                session = await create_session(request.session_id)
+                session = await create_session(
+                    session_id=request.session_id,
+                    user_id=current_user["id"]
+                )
             await asyncio.sleep(0.1)
             
             # Step 3: Analysis

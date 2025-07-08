@@ -47,7 +47,10 @@ async def generate_quiz(
             # If session does not exist, create it with the actual user_id
             # Validate user_id is a real UUID from authentication
             validated_user_id = require_authenticated_user_id(current_user["id"], "quiz session creation")
-            session = await create_session(request.session_id, validated_user_id)
+            session = await create_session(
+                session_id=request.session_id, 
+                user_id=validated_user_id
+            )
         chat_history = session.get("chat_history", [])
 
         quiz_service = QuizService()
@@ -612,5 +615,8 @@ async def get_course_quiz_history(
 async def create_new_session(current_user: dict = Depends(get_current_active_user)):
     """Create a new user session and return session data"""
     session_id = str(uuid.uuid4())
-    session = await create_session(session_id, current_user["id"])
+    session = await create_session(
+        session_id=session_id, 
+        user_id=current_user["id"]
+    )
     return session

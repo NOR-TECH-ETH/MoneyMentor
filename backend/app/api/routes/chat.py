@@ -114,8 +114,8 @@ async def process_message_streaming(
             
             # Create session with initial user message
             session = await create_session(
-                request.session_id, 
-                current_user["id"],
+                session_id=request.session_id, 
+                user_id=current_user["id"],
                 initial_chat_history=[user_message]
             )
             if not session:

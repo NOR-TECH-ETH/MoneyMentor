@@ -126,6 +126,7 @@ class MoneyMentorFunction:
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }
                 session = await create_session(
+                    session_id=session_id,  # Use the provided session_id
                     user_id=validated_user_id,
                     initial_chat_history=[initial_message]
                 )
@@ -183,6 +184,7 @@ class MoneyMentorFunction:
                     }
                     
                     session = await create_session(
+                        session_id=session_id,  # Use the provided session_id
                         user_id=validated_user_id,
                         initial_chat_history=[initial_message]
                     )
@@ -379,8 +381,10 @@ class MoneyMentorFunction:
                 # Create new session and use the generated session_id
                 # Validate user_id is a real UUID from authentication
                 validated_user_id = require_authenticated_user_id(user_id, "streaming session creation")
-                session = await create_session(user_id=validated_user_id)  # Use validated user_id
-                session_id = session["session_id"]  # Update session_id to use generated one
+                session = await create_session(
+                    session_id=session_id,  # Use the provided session_id
+                    user_id=validated_user_id
+                )
             
             if not session:
                 raise HTTPException(status_code=500, detail="Failed to create session")

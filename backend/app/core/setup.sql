@@ -76,13 +76,16 @@ CREATE INDEX IF NOT EXISTS idx_content_chunks_chunk_index ON content_chunks(chun
 -- Create user_sessions table
 CREATE TABLE IF NOT EXISTS user_sessions (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    session_id text UNIQUE,  -- Custom session_id from frontend
     user_id text NOT NULL,
-    session_data jsonb DEFAULT '{}',
+    chat_history jsonb DEFAULT '[]',
+    progress jsonb DEFAULT '{}',
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_session_id ON user_sessions(session_id);
 
 -- Create chat_history table
 CREATE TABLE IF NOT EXISTS chat_history (
