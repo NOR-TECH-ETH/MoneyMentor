@@ -1,11 +1,28 @@
 import React, { useState } from 'react';
-import { registerUser, loginUser } from '../utils/chatWidget/api';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Button,
+  Typography,
+  Box,
+  FormControlLabel,
+  Checkbox,
+  Alert,
+  Link
+} from '@mui/material';
+import { registerUser, loginUser, logoutUser } from '../utils/chatWidget/api';
+import { storeAuthData } from '../utils/sessionUtils';
 import Cookies from 'js-cookie';
-import '../styles/ChatWidget.css';
+
+// Module-level variable to prevent multiple logout attempts
+let logoutInProgress = false;
 
 interface AuthModalProps {
   isOpen: boolean;
-  onAuthSuccess: () => void;
+  onAuthSuccess: (userData?: any) => void;
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
@@ -18,8 +35,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [keepLoggedIn, setKeepLoggedIn] = useState(true);
 
-  if (!isOpen) return null;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -31,24 +46,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
       } else {
         result = await loginUser(email, password);
       }
-      if (result && (result.token || result.access_token)) {
-        const token = result.token || result.access_token;
-        let expiresAt: Date;
-        
-        if (keepLoggedIn) {
-          Cookies.set('auth_token', token, { expires: 30 });
-          expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-        } else {
-          const expires = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
-          Cookies.set('auth_token', token, { expires });
-          expiresAt = expires;
-        }
-        
-        // Store expiration time in localStorage for tracking
-        localStorage.setItem('auth_token_expires', expiresAt.toISOString());
-        onAuthSuccess();
+      if (result && result.access_token && result.refresh_token && result.user?.id) {
+        storeAuthData(result);
+        onAuthSuccess(result);
       } else {
-        setError('No token returned.');
+        setError('Invalid response from server. Please try again.');
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
@@ -57,78 +59,151 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
     }
   };
 
+  const handleModeToggle = () => {
+    setMode(mode === 'login' ? 'register' : 'login');
+    setError('');
+  };
+
   return (
-    <div className="modal-overlay">
-      <form className="modal-content" onSubmit={handleSubmit}>
-        <h2 className="modal-title">{mode === 'login' ? 'Login' : 'Register'}</h2>
+    <Dialog
+      open={isOpen}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          p: 1
+        }
+      }}
+    >
+      <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
+        <Typography variant="h5" sx={{ fontWeight: 600, mb: 0.5 }}>
+          {mode === 'login' ? 'Welcome Back' : 'Create Account'}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {mode === 'login' ? 'Sign in to continue' : 'Join MoneyMentor to start your financial journey'}
+        </Typography>
+      </DialogTitle>
+
+      <DialogContent>
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
         {mode === 'register' && (
-          <>
-            <input
-              type="text"
-              placeholder="First Name"
+            <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+              <TextField
+                fullWidth
+                label="First Name"
               value={firstName}
-              onChange={e => setFirstName(e.target.value)}
-              required
-              className="modal-input"
+                onChange={(e) => setFirstName(e.target.value)}
+                required={mode === 'register'}
+                size="small"
             />
-            <input
-              type="text"
-              placeholder="Last Name"
+              <TextField
+                fullWidth
+                label="Last Name"
               value={lastName}
-              onChange={e => setLastName(e.target.value)}
-              required
-              className="modal-input"
+                onChange={(e) => setLastName(e.target.value)}
+                required={mode === 'register'}
+                size="small"
             />
-          </>
+            </Box>
         )}
-        <input
+
+          <TextField
+            fullWidth
+            label="Email"
           type="email"
-          placeholder="Email"
           value={email}
-          onChange={e => setEmail(e.target.value)}
+            onChange={(e) => setEmail(e.target.value)}
           required
-          className="modal-input"
+            size="small"
+            sx={{ mb: 2 }}
         />
-        <input
+
+          <TextField
+            fullWidth
+            label="Password"
           type="password"
-          placeholder="Password"
           value={password}
-          onChange={e => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value)}
           required
-          className="modal-input"
-        />
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-          <input
-            type="checkbox"
-            id="keepLoggedIn"
-            checked={keepLoggedIn}
-            onChange={e => setKeepLoggedIn(e.target.checked)}
-            style={{ marginRight: 8 }}
+            size="small"
+            sx={{ mb: 2 }}
           />
-          <label htmlFor="keepLoggedIn" style={{ fontSize: 14 }}>
-            Keep me logged in
-          </label>
-        </div>
-        {error && <div className="modal-error">{error}</div>}
-        <button type="submit" disabled={loading} className="modal-btn">
-          {loading ? 'Please wait...' : mode === 'login' ? 'Login' : 'Register'}
-        </button>
-        <div className="modal-switch">
-          {mode === 'login' ? (
-            <span>Don't have an account? <button type="button" className="modal-link" onClick={() => setMode('register')}>Register</button></span>
-          ) : (
-            <span>Already have an account? <button type="button" className="modal-link" onClick={() => setMode('login')}>Login</button></span>
+
+          <FormControlLabel
+            control={
+              <Checkbox
+            checked={keepLoggedIn}
+                onChange={(e) => setKeepLoggedIn(e.target.checked)}
+                size="small"
+              />
+            }
+            label="Keep me logged in for 30 days"
+            sx={{ mb: 2 }}
+          />
+
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
           )}
-        </div>
-      </form>
-    </div>
+
+          <Button
+            type="submit"
+            fullWidth
+            variant="contained"
+            disabled={loading}
+            sx={{ mb: 2 }}
+          >
+            {loading ? 'Loading...' : (mode === 'login' ? 'Sign In' : 'Create Account')}
+          </Button>
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ justifyContent: 'center', pb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+          <Link
+            component="button"
+            variant="body2"
+            onClick={handleModeToggle}
+            sx={{ cursor: 'pointer' }}
+          >
+            {mode === 'login' ? 'Sign Up' : 'Sign In'}
+          </Link>
+        </Typography>
+      </DialogActions>
+    </Dialog>
   );
 };
 
-export const logout = () => {
-  Cookies.remove('auth_token');
-  localStorage.removeItem('auth_token_expires');
-  window.location.reload();
-};
+export default AuthModal;
 
-export default AuthModal; 
+export const logout = async () => {
+  // Prevent multiple logout attempts
+  if (logoutInProgress) {
+    return;
+  }
+  
+  logoutInProgress = true;
+  
+  try {
+    const refreshToken = Cookies.get('refresh_token');
+    if (refreshToken) {
+      await logoutUser(refreshToken);
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+  } finally {
+    // Clear all auth data
+  Cookies.remove('auth_token');
+    Cookies.remove('refresh_token');
+  localStorage.removeItem('auth_token_expires');
+    localStorage.removeItem('moneymentor_user_id');
+    localStorage.removeItem('moneymentor_session_id');
+    
+    // Reset the flag and reload
+    logoutInProgress = false;
+  window.location.reload();
+  }
+};

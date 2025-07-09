@@ -369,14 +369,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   theme = 'light'
 }) => {
   // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState(!!Cookies.get('auth_token'));
+  const [isAuthenticated, setIsAuthenticated] = useState(!!Cookies.get('auth_token') && !!Cookies.get('refresh_token') && !!localStorage.getItem('moneymentor_user_id'));
   const [showSessionExpiredModal, setShowSessionExpiredModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       const token = Cookies.get('auth_token');
+      const refreshToken = Cookies.get('refresh_token');
+      const userId = localStorage.getItem('moneymentor_user_id');
       const wasAuthenticated = isAuthenticated;
-      const isNowAuthenticated = !!token;
+      const isNowAuthenticated = !!(token && refreshToken && userId);
       
       // Check if session expired
       if (wasAuthenticated && !isNowAuthenticated) {
@@ -399,7 +402,21 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     return () => clearInterval(interval);
   }, [isAuthenticated]);
   
-  const handleAuthSuccess = () => setIsAuthenticated(true);
+  const handleAuthSuccess = (userData?: any) => {
+    setIsAuthenticated(true);
+    
+    // Update user profile with data from login response
+    if (userData?.user) {
+      const { first_name, last_name, email } = userData.user;
+      const fullName = `${first_name} ${last_name}`.trim();
+      
+      profileHook.updateProfile({
+        name: fullName,
+        email: email,
+        joinDate: new Date().toISOString(), // Will be updated when profile is fetched
+      });
+    }
+  };
   
   const handleSessionExpiredStayLoggedIn = () => {
     setShowSessionExpiredModal(false);
@@ -409,6 +426,18 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const handleSessionExpiredLogout = () => {
     setShowSessionExpiredModal(false);
     setIsAuthenticated(false);
+  };
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return; // Prevent multiple clicks
+    
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+      setIsLoggingOut(false);
+    }
   };
 
   // --- All other hooks below ---
@@ -462,9 +491,12 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>(initializeUploadProgress());
   const messagesEndRef = useScrollToBottom([chatMessages, learnMessages, currentWindow]);
+  
+  // Get user ID from backend (stored during login)
+  const userId = localStorage.getItem('moneymentor_user_id');
   const apiConfig: ApiConfig = {
     apiUrl,
-    userId: sessionIds.userId,
+    userId: userId || '',
     sessionId: sessionIds.sessionId
   };
 
@@ -1075,8 +1107,15 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
             </div>
           </div>
           <div className="header-spacer"></div>
-          <button onClick={logout} className="logout-btn" title="Logout">
+          <button 
+            onClick={handleLogout} 
+            className="logout-btn" 
+            title="Logout"
+            disabled={isLoggingOut}
+            style={{ opacity: isLoggingOut ? 0.6 : 1, cursor: isLoggingOut ? 'not-allowed' : 'pointer' }}
+          >
             <LogoutRounded fontSize="small" />
+            {isLoggingOut && <span style={{ marginLeft: '4px', fontSize: '12px' }}>...</span>}
           </button>
         </div>
 

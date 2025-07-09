@@ -19,32 +19,7 @@ export const createMessage = (
 });
 
 /**
- * Create welcome message
- */
-export const createWelcomeMessage = (
-  sessionId: string,
-  userId: string,
-): ChatMessage => ({
-  ...createMessage(
-    "👋 Welcome to **Chat Mode**! I'm your AI financial assistant.\n\n🎯 **What I can help you with:**\n• **Ask questions** about budgeting, saving, investing, debt, and more\n• **Take quizzes** to test your knowledge and learn new concepts\n•",
-    'assistant',
-    sessionId,
-    userId
-  ),
- 
-});
-
-/**
- * Create system message
- */
-export const createSystemMessage = (
-  content: string,
-  sessionId: string,
-  userId: string
-): ChatMessage => createMessage(content, 'system', sessionId, userId);
-
-/**
- * Create user message
+ * Create a user message
  */
 export const createUserMessage = (
   content: string,
@@ -53,13 +28,81 @@ export const createUserMessage = (
 ): ChatMessage => createMessage(content, 'user', sessionId, userId);
 
 /**
- * Create assistant message
+ * Create an assistant message
  */
 export const createAssistantMessage = (
   content: string,
   sessionId: string,
   userId: string
 ): ChatMessage => createMessage(content, 'assistant', sessionId, userId);
+
+/**
+ * Create a system message
+ */
+export const createSystemMessage = (
+  content: string,
+  sessionId: string,
+  userId: string
+): ChatMessage => createMessage(content, 'system', sessionId, userId);
+
+/**
+ * Create a welcome message
+ */
+export const createWelcomeMessage = (
+  sessionId: string,
+  userId: string
+): ChatMessage => {
+  const welcomeContent = `👋 **Welcome to MoneyMentor!**
+
+I'm your AI financial advisor, here to help you build better money habits and achieve your financial goals.
+
+**What I can help you with:**
+• 💰 **Budgeting & Saving** - Create budgets and savings plans
+• 📊 **Investment Guidance** - Learn about investing basics
+• 💳 **Debt Management** - Strategies to pay off debt faster
+• 🎯 **Financial Goals** - Plan for major purchases or retirement
+• 📚 **Financial Education** - Take courses and quizzes
+
+**Try these commands:**
+• \`diagnostic_test\` - Take a quick assessment of your financial knowledge
+• \`courses\` - Browse available financial education courses
+• \`chat\` - Start a general conversation about money
+
+What would you like to work on today?`;
+
+  return createSystemMessage(welcomeContent, sessionId, userId);
+};
+
+/**
+ * Create a calculation result message
+ */
+export const createCalculationMessage = (
+  result: CalculationResult,
+  sessionId: string,
+  userId: string
+): ChatMessage => ({
+  id: uuidv4(),
+  content: '',
+  type: 'calculation',
+  timestamp: new Date().toISOString(),
+  sessionId,
+  userId,
+  metadata: {
+    calculationResult: result
+  }
+});
+
+/**
+ * Format content for display
+ */
+export const formatContent = (content: string): string => {
+  // Convert markdown-style formatting to HTML
+  return content
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/`(.*?)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+};
 
 /**
  * Format file upload success message

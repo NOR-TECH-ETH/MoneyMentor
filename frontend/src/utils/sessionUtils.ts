@@ -1,7 +1,10 @@
 import Cookies from 'js-cookie';
+import { refreshToken } from './chatWidget/api';
 
 export interface SessionInfo {
   token: string;
+  refreshToken: string;
+  userId: string;
   expiresAt: Date | null;
   isExpired: boolean;
   timeUntilExpiry: number; // in milliseconds
@@ -12,7 +15,10 @@ export interface SessionInfo {
  */
 export const getSessionInfo = (): SessionInfo | null => {
   const token = Cookies.get('auth_token');
-  if (!token) return null;
+  const refreshToken = Cookies.get('refresh_token');
+  const userId = localStorage.getItem('moneymentor_user_id');
+  
+  if (!token || !refreshToken || !userId) return null;
 
   // For now, we'll use a simpler approach since js-cookie doesn't expose expiration easily
   // We'll store the expiration time in localStorage when setting the cookie
@@ -31,6 +37,8 @@ export const getSessionInfo = (): SessionInfo | null => {
 
   return {
     token,
+    refreshToken,
+    userId,
     expiresAt,
     isExpired,
     timeUntilExpiry
@@ -52,27 +60,42 @@ export const isSessionExpiredOrExpiringSoon = (): boolean => {
 };
 
 /**
- * Extend session with new expiration
+ * Refresh the access token using the refresh token
  */
-export const extendSession = (keepLoggedIn: boolean = true): void => {
-  const token = Cookies.get('auth_token');
-  if (!token) return;
+export const refreshAccessToken = async (): Promise<boolean> => {
+  try {
+    const refreshTokenValue = Cookies.get('refresh_token');
+    if (!refreshTokenValue) {
+      return false;
+    }
 
-  let expiresAt: Date;
-
-  if (keepLoggedIn) {
-    // Extend to 30 days
-    Cookies.set('auth_token', token, { expires: 30 });
-    expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  } else {
-    // Extend to 2 hours
-    const expires = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    Cookies.set('auth_token', token, { expires });
-    expiresAt = expires;
+    const result = await refreshToken(refreshTokenValue);
+    
+    if (result && result.access_token && result.refresh_token) {
+      // Store new tokens
+      Cookies.set('auth_token', result.access_token, { expires: 30 });
+      Cookies.set('refresh_token', result.refresh_token, { expires: 30 });
+      
+      // Update expiration time
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      localStorage.setItem('auth_token_expires', expiresAt.toISOString());
+      
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Failed to refresh token:', error);
+    return false;
   }
+};
 
-  // Store expiration time in localStorage for tracking
-  localStorage.setItem('auth_token_expires', expiresAt.toISOString());
+/**
+ * Extend session with new expiration (legacy function - now uses refresh tokens)
+ */
+export const extendSession = async (keepLoggedIn: boolean = true): Promise<boolean> => {
+  // Instead of just extending expiry, try to refresh the token
+  return await refreshAccessToken();
 };
 
 /**
@@ -80,5 +103,25 @@ export const extendSession = (keepLoggedIn: boolean = true): void => {
  */
 export const clearSession = (): void => {
   Cookies.remove('auth_token');
+  Cookies.remove('refresh_token');
   localStorage.removeItem('auth_token_expires');
+  localStorage.removeItem('moneymentor_user_id');
+};
+
+/**
+ * Store authentication data from login/register response
+ */
+export const storeAuthData = (authData: any): void => {
+  if (authData.access_token && authData.refresh_token && authData.user?.id) {
+    // Store tokens
+    Cookies.set('auth_token', authData.access_token, { expires: 30 });
+    Cookies.set('refresh_token', authData.refresh_token, { expires: 30 });
+    
+    // Store user ID from backend
+    localStorage.setItem('moneymentor_user_id', authData.user.id);
+    
+    // Store expiration time
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    localStorage.setItem('auth_token_expires', expiresAt.toISOString());
+  }
 }; 

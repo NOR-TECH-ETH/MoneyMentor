@@ -14,6 +14,7 @@ const withAuth = (headers: Record<string, string> = {}) => {
   const token = getAuthToken();
   return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
 };
+
 export interface SessionIds {
   userId: string;
   sessionId: string;
@@ -21,14 +22,17 @@ export interface SessionIds {
 
 /**
  * Initialize or retrieve user and session IDs from localStorage
+ * User ID comes from backend login response, session ID is generated locally
  */
 export const initializeSession = (): SessionIds => {
-  let userId = localStorage.getItem(STORAGE_KEYS.USER_ID);
+  // Get user ID from backend (stored during login)
+  let userId = localStorage.getItem('moneymentor_user_id');
   if (!userId) {
-    userId = uuidv4();
-    localStorage.setItem(STORAGE_KEYS.USER_ID, userId);
+    // If no user ID, user is not authenticated
+    throw new Error('User not authenticated');
   }
 
+  // Generate session ID locally if not exists
   let sessionId = localStorage.getItem(STORAGE_KEYS.SESSION_ID);
   if (!sessionId) {
     sessionId = uuidv4();
@@ -63,14 +67,15 @@ export const generateNewSession = async (): Promise<string> => {
  */
 export const clearSession = (): void => {
   localStorage.removeItem(STORAGE_KEYS.SESSION_ID);
-  localStorage.removeItem(STORAGE_KEYS.USER_ID);
+  // Note: We don't remove USER_ID here as it should persist across sessions
+  // It will be removed during logout
 };
 
 /**
  * Get current session IDs without generating new ones
  */
 export const getCurrentSession = (): SessionIds | null => {
-  const userId = localStorage.getItem(STORAGE_KEYS.USER_ID);
+  const userId = localStorage.getItem('moneymentor_user_id');
   const sessionId = localStorage.getItem(STORAGE_KEYS.SESSION_ID);
   
   if (!userId || !sessionId) {

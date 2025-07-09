@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Typography,
+  Box,
+  FormControlLabel,
+  Checkbox,
+  Alert
+} from '@mui/material';
 import Cookies from 'js-cookie';
-import { extendSession } from '../utils/sessionUtils';
-import '../styles/ChatWidget.css';
+import { refreshAccessToken } from '../utils/sessionUtils';
 
 interface SessionExpiredModalProps {
   isOpen: boolean;
@@ -15,85 +26,96 @@ const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
   onLogout 
 }) => {
   const [keepLoggedIn, setKeepLoggedIn] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
-  if (!isOpen) return null;
-
-  const handleStayLoggedIn = () => {
-    const token = Cookies.get('auth_token');
-    if (token) {
-      extendSession(keepLoggedIn);
-      onStayLoggedIn();
+  const handleStayLoggedIn = async () => {
+    setIsRefreshing(true);
+    setError('');
+    try {
+      const success = await refreshAccessToken();
+      if (success) {
+        onStayLoggedIn();
+      } else {
+        setError('Failed to refresh session. Please log in again.');
+      }
+    } catch (error) {
+      setError('Session refresh failed. Please log in again.');
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
   const handleLogout = () => {
     Cookies.remove('auth_token');
+    Cookies.remove('refresh_token');
     localStorage.removeItem('auth_token_expires');
+    localStorage.removeItem('moneymentor_user_id');
+    localStorage.removeItem('moneymentor_session_id');
     onLogout();
   };
 
   return (
-    <div className="session-expired-overlay">
-      <div className="session-expired-card">
-        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏰</div>
-          <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: '600' }}>Session Expired</h3>
-          <p style={{ color: '#666', margin: '0', fontSize: '13px', lineHeight: '1.4' }}>
-            Your session has expired. Would you like to stay logged in?
-          </p>
-        </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', justifyContent: 'center' }}>
-          <input
-            type="checkbox"
-            id="keepLoggedIn"
-            checked={keepLoggedIn}
-            onChange={e => setKeepLoggedIn(e.target.checked)}
-            style={{ marginRight: 8 }}
+    <Dialog
+      open={isOpen}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          p: 1
+        }
+      }}
+    >
+      <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
+        <Box sx={{ textAlign: 'center', mb: 2 }}>
+          <Typography variant="h3" sx={{ mb: 1 }}>⏰</Typography>
+          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+            Session Expired
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Your session has expired. Would you like to refresh your session?
+          </Typography>
+        </Box>
+      </DialogTitle>
+
+      <DialogContent>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={keepLoggedIn}
+                onChange={(e) => setKeepLoggedIn(e.target.checked)}
+                size="small"
+              />
+            }
+            label="Keep me logged in for 30 days"
           />
-          <label htmlFor="keepLoggedIn" style={{ fontSize: 13 }}>
-            Keep me logged in for 30 days
-          </label>
-        </div>
-        
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-          <button 
-            type="button" 
-            onClick={handleStayLoggedIn}
-            style={{ 
-              backgroundColor: '#10b981',
-              border: 'none',
-              color: 'white',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: '500',
-              flex: 1
-            }}
-          >
-            Stay Logged In
-          </button>
-          <button 
-            type="button" 
-            onClick={handleLogout}
-            style={{ 
-              backgroundColor: 'transparent',
-              border: '1px solid #d1d5db',
-              color: '#374151',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: '500',
-              flex: 1
-            }}
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-    </div>
+
+          {error && (
+            <Alert severity="error" sx={{ width: '100%' }}>
+              {error}
+            </Alert>
+          )}
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ justifyContent: 'center', gap: 2, pb: 2 }}>
+        <Button
+          onClick={handleStayLoggedIn}
+          disabled={isRefreshing}
+          variant="contained"
+        >
+          {isRefreshing ? 'Refreshing...' : 'Stay Logged In'}
+        </Button>
+        <Button
+          onClick={handleLogout}
+          variant="outlined"
+        >
+          Logout
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 };
 

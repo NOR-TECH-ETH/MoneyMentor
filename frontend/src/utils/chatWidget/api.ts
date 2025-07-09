@@ -7,12 +7,77 @@ export interface ApiConfig {
   sessionId: string;
 }
 
-const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
-// const BACKEND_URL = 'http://localhost:8000';
+// const BACKEND_URL = 'https://backend-647308514289.us-central1.run.app';
+const BACKEND_URL = 'http://localhost:8000';
 const BACKEND_TWO_URL = 'https://backend-2-647308514289.us-central1.run.app';
 
 // Helper to get token from cookies
 const getAuthToken = () => Cookies.get('auth_token');
+
+// Helper to add Authorization header if token exists
+const withAuth = (headers: Record<string, string> = {}) => {
+  const token = getAuthToken();
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+};
+
+/**
+ * Make an authenticated API request with automatic token refresh
+ */
+export const makeAuthenticatedRequest = async (
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> => {
+  // Add auth header
+  const headers = withAuth(options.headers as Record<string, string> || {});
+  
+  // Make the request
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers
+    }
+  });
+
+  // If we get a 401, try to refresh the token and retry once
+  if (response.status === 401) {
+    try {
+      const refreshTokenValue = Cookies.get('refresh_token');
+      if (refreshTokenValue) {
+        const refreshResult = await refreshToken(refreshTokenValue);
+        
+        if (refreshResult && refreshResult.access_token) {
+          // Update the stored token
+          Cookies.set('auth_token', refreshResult.access_token, { expires: 30 });
+          
+          // Retry the original request with the new token
+          const newHeaders = {
+            ...headers,
+            Authorization: `Bearer ${refreshResult.access_token}`
+          };
+          
+          return await fetch(url, {
+            ...options,
+            headers: {
+              'Content-Type': 'application/json',
+              ...newHeaders
+            }
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      // If refresh fails, clear session and throw error
+      Cookies.remove('auth_token');
+      Cookies.remove('refresh_token');
+      localStorage.removeItem('auth_token_expires');
+      localStorage.removeItem('moneymentor_user_id');
+      throw new Error('Authentication expired. Please log in again.');
+    }
+  }
+
+  return response;
+};
 
 // Register API
 export const registerUser = async (email: string, password: string, first_name: string, last_name: string): Promise<any> => {
@@ -21,7 +86,12 @@ export const registerUser = async (email: string, password: string, first_name: 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password, first_name, last_name })
   });
-  if (!response.ok) throw new Error('Registration failed');
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Registration failed');
+  }
+  
   return response.json();
 };
 
@@ -32,14 +102,45 @@ export const loginUser = async (email: string, password: string): Promise<any> =
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
-  if (!response.ok) throw new Error('Login failed');
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Login failed');
+  }
+  
   return response.json();
 };
 
-// Helper to add Authorization header if token exists
-const withAuth = (headers: Record<string, string> = {}) => {
-  const token = getAuthToken();
-  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+// Refresh token API
+export const refreshToken = async (refresh_token: string): Promise<any> => {
+  const response = await fetch(`${BACKEND_URL}/api/user/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token })
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Token refresh failed');
+  }
+  
+  return response.json();
+};
+
+// Logout API
+export const logoutUser = async (refresh_token: string): Promise<any> => {
+  const response = await fetch(`${BACKEND_URL}/api/user/logout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token })
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Logout failed');
+  }
+  
+  return response.json();
 };
 
 // Chat API calls - Using port 8000
@@ -47,12 +148,8 @@ export const sendChatMessage = async (
   config: ApiConfig,
   message: string
 ): Promise<ChatResponse> => {
-  const response = await fetch(`${BACKEND_URL}/api/chat/message/stream`, {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/chat/message/stream`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...withAuth()
-    },
     body: JSON.stringify({
       query: message,
       session_id: config.sessionId
@@ -60,7 +157,8 @@ export const sendChatMessage = async (
   });
 
   if (!response.ok) {
-    throw new Error('Failed to send message');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to send message');
   }
 
   return response.json();
@@ -480,17 +578,14 @@ export const generateDiagnosticQuiz = async (
     requestBody.topic = topic;
   }
 
-  const response = await fetch(`${BACKEND_URL}/api/quiz/generate`, {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/quiz/generate`, {
     method: 'POST',
-    headers: { 
-      'Content-Type': 'application/json',
-      ...withAuth()
-    },
     body: JSON.stringify(requestBody)
   });
 
   if (!response.ok) {
-    throw new Error('Failed to generate diagnostic quiz');
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to generate diagnostic quiz');
   }
 
   const data = await response.json();
@@ -548,4 +643,67 @@ export const submitDiagnosticQuiz = async (
 
   const data = await response.json();
   return data.data;
+}; 
+
+// User Profile API calls
+export const getUserProfile = async (): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/user/profile`);
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to get profile');
+  }
+  
+  return response.json();
+};
+
+export const updateUserProfile = async (profileData: {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+}): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/user/profile`, {
+    method: 'PUT',
+    body: JSON.stringify(profileData)
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update profile');
+  }
+  
+  return response.json();
+};
+
+export const changeUserPassword = async (currentPassword: string, newPassword: string): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/user/password`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword
+    })
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to change password');
+  }
+  
+  return response.json();
+};
+
+export const deleteUserAccount = async (currentPassword: string): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/user/account`, {
+    method: 'DELETE',
+    body: JSON.stringify({
+      current_password: currentPassword
+    })
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete account');
+  }
+  
+  return response.json();
 }; 

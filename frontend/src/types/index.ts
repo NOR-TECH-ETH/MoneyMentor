@@ -117,7 +117,7 @@ export interface CalculationResult {
 
 // Local Storage Keys
 export const STORAGE_KEYS = {
-  USER_ID: 'moneymentor_user_id',
+  USER_ID: 'moneymentor_user_id', // Updated to match the key used in session management
   SESSION_ID: 'moneymentor_session_id',
   QUIZ_PROGRESS: 'moneymentor_quiz_progress',
   CHAT_HISTORY: 'moneymentor_chat_history',

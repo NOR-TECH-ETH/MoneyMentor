@@ -246,6 +246,8 @@ async def clear_chat_history(
         
         return {"status": "success", "message": "Chat history cleared"}
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to clear chat history: {e}")
         raise HTTPException(status_code=500, detail=str(e))

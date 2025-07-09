@@ -108,6 +108,8 @@ async def generic_calculation(
             "disclaimer": "Estimates only. Verify with a certified financial professional."
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Generic calculation failed: {e}")
         raise HTTPException(status_code=500, detail="Calculation failed")
