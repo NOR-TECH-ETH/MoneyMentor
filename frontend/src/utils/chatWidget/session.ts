@@ -32,9 +32,10 @@ export const initializeSession = (): SessionIds => {
     throw new Error('User not authenticated');
   }
 
-  // Generate session ID locally if not exists
+  // Get session ID from localStorage
   let sessionId = localStorage.getItem(STORAGE_KEYS.SESSION_ID);
   if (!sessionId) {
+    // If no session ID, generate a new UUID for new chat
     sessionId = uuidv4();
     localStorage.setItem(STORAGE_KEYS.SESSION_ID, sessionId);
   }
@@ -43,23 +44,18 @@ export const initializeSession = (): SessionIds => {
 };
 
 /**
- * Generate a new session ID and store it
+ * Set session ID to a new UUID for new chat creation
+ * This will trigger backend to create a new session when first message is sent
  */
-export const generateNewSession = async (): Promise<string> => {
-  const response = await fetch(`${BACKEND_URL}/api/quiz/session/`, {
-    method: 'POST',
-    headers: { 
-      'Content-Type': 'application/json',
-      ...withAuth()
-    }
-  });
-  if (!response.ok) {
-    throw new Error('Failed to create session');
-  }
-  const data = await response.json();
-  const sessionId = data.id;
+export const setNewChatSession = (): void => {
+  localStorage.setItem(STORAGE_KEYS.SESSION_ID, uuidv4());
+};
+
+/**
+ * Set active session ID
+ */
+export const setActiveSession = (sessionId: string): void => {
   localStorage.setItem(STORAGE_KEYS.SESSION_ID, sessionId);
-  return sessionId;
 };
 
 /**
@@ -83,4 +79,15 @@ export const getCurrentSession = (): SessionIds | null => {
   }
   
   return { userId, sessionId };
+};
+
+/**
+ * Check if current session is a new chat (no previous messages)
+ * Note: We can't reliably detect this anymore since we use UUIDs
+ * This function is kept for backward compatibility but always returns false
+ */
+export const isNewChatSession = (): boolean => {
+  // Since we now use UUIDs instead of "dummy", we can't reliably detect new sessions
+  // The backend will handle session creation when needed
+  return false;
 }; 

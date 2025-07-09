@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import AuthModal from './AuthModal';
 import SessionExpiredModal from './SessionExpiredModal';
 import Cookies from 'js-cookie';
@@ -107,6 +108,8 @@ import {
 
 // Import session utilities
 import { getMockChatSessions } from '../utils/sessions';
+import { getAllUserSessions, getSessionHistory, deleteSession } from '../utils/chatWidget/api';
+import { setActiveSession, setNewChatSession, isNewChatSession } from '../utils/chatWidget/session';
 import { isSessionExpiredOrExpiringSoon, getSessionInfo } from '../utils/sessionUtils';
 
 // Import styles
@@ -447,9 +450,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const sidebarHook = useSidebar();
   const profileHook = useProfile();
   const currentTheme = profileHook.userProfile.preferences.theme;
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>(getMockChatSessions());
-  const handleSessionSelect = (sessionId: string) => {};
-  const handleNewChat = () => {};
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [chatMessageCount, setChatMessageCount] = useState(0);
   const [chatQuizTotalAnswered, setChatQuizTotalAnswered] = useState(0);
   const [chatQuizCorrectAnswered, setChatQuizCorrectAnswered] = useState(0);
@@ -494,11 +497,194 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   
   // Get user ID from backend (stored during login)
   const userId = localStorage.getItem('moneymentor_user_id');
-  const apiConfig: ApiConfig = {
+  
+  // Ensure session ID is available
+  let currentSessionId = sessionIds.sessionId;
+  if (!currentSessionId) {
+    setNewChatSession();
+    currentSessionId = localStorage.getItem('moneymentor_session_id') || uuidv4();
+    setSessionIds({ ...sessionIds, sessionId: currentSessionId });
+  }
+  
+  const [apiConfig, setApiConfig] = useState<ApiConfig>({
     apiUrl,
     userId: userId || '',
-    sessionId: sessionIds.sessionId
+    sessionId: currentSessionId
+  });
+  
+  // Update apiConfig when session ID changes
+  useEffect(() => {
+    setApiConfig({
+      apiUrl,
+      userId: userId || '',
+      sessionId: sessionIds.sessionId || currentSessionId
+    });
+  }, [sessionIds.sessionId, userId, apiUrl]);
+
+  // Session management functions
+  const handleSessionSelect = async (sessionId: string) => {
+    try {
+      // Set the active session
+      setActiveSession(sessionId);
+      setSessionIds({ ...sessionIds, sessionId });
+      
+      // Clear current chat messages
+      setChatMessages([]);
+      
+      // Fetch session history from backend
+      const sessionHistory = await getSessionHistory(apiConfig, sessionId);
+      
+      // Transform backend messages to ChatMessage format
+      const transformedMessages: ChatMessage[] = sessionHistory.chat_history?.map((msg: any) => ({
+        id: msg.id || `msg_${Date.now()}_${Math.random()}`,
+        content: msg.content,
+        type: msg.role === 'user' ? 'user' : 'assistant',
+        timestamp: msg.timestamp || new Date().toISOString(),
+        sessionId: sessionId,
+        userId: userId || '',
+        metadata: msg.metadata || {}
+      })) || [];
+      
+      setChatMessages(transformedMessages);
+      
+      // Update sidebar state
+      sidebarHook.setSidebarState({
+        ...sidebarHook.sidebarState,
+        selectedSessionId: sessionId
+      });
+      
+    } catch (error) {
+      console.error('Failed to load session:', error);
+      // Show error message to user
+      setChatMessages([{
+        id: `error_${Date.now()}`,
+        content: 'Failed to load chat history. Please try again.',
+        type: 'system',
+        timestamp: new Date().toISOString(),
+        sessionId: sessionId,
+        userId: userId || ''
+      }]);
+    }
   };
+
+  const handleNewChat = () => {
+    // Clear current session and generate new UUID
+    setNewChatSession();
+    const newSessionId = localStorage.getItem('moneymentor_session_id') || uuidv4();
+    setSessionIds({ ...sessionIds, sessionId: newSessionId });
+    
+    // Clear chat messages
+    setChatMessages([]);
+    
+    // Clear sidebar selection
+    sidebarHook.setSidebarState({
+      ...sidebarHook.sidebarState,
+      selectedSessionId: null
+    });
+    
+    // Close sidebar on mobile
+    if (window.innerWidth <= 768) {
+      sidebarHook.setSidebarState({
+        ...sidebarHook.sidebarState,
+        isOpen: false
+      });
+    }
+  };
+
+  // Handle session deletion
+  const handleSessionDelete = async (sessionId: string) => {
+    try {
+      // Call the delete session API
+      await deleteSession(apiConfig, sessionId);
+      
+      // Remove the session from the local state
+      setChatSessions(prev => prev.filter(session => session.id !== sessionId));
+      
+      // If the deleted session was the currently selected one, clear the selection
+      if (sidebarHook.sidebarState.selectedSessionId === sessionId) {
+        sidebarHook.setSidebarState({
+          ...sidebarHook.sidebarState,
+          selectedSessionId: null
+        });
+        
+        // Clear chat messages if the deleted session was active
+        setChatMessages([]);
+      }
+      
+      // Show success message
+      console.log('Session deleted successfully');
+      
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+      throw error; // Re-throw to let the UI handle the error
+    }
+  };
+
+  // Fetch sessions from backend
+  const fetchSessions = async () => {
+    if (!apiConfig || !userId) return;
+    
+    setIsLoadingSessions(true);
+    setSessionsError(null);
+    
+    try {
+      const response = await getAllUserSessions(apiConfig);
+      
+      // Handle backend response format: { sessions: { sessionId: [messages] } }
+      let sessionsArr: any[] = [];
+      
+      if (response && response.sessions) {
+        // Convert object format to array format
+        sessionsArr = Object.entries(response.sessions).map(([sessionId, messages]: [string, any]) => {
+          const messageArray = Array.isArray(messages) ? messages : [];
+          const lastMessage = messageArray.length > 0 ? messageArray[messageArray.length - 1] : null;
+          const firstMessage = messageArray.length > 0 ? messageArray[0] : null;
+          
+          return {
+            session_id: sessionId,
+            title: `Chat ${sessionId.slice(-6)}`,
+            preview: lastMessage?.user || lastMessage?.assistant || 'No preview available',
+            timestamp: new Date().toISOString(), // Use current time as fallback
+            message_count: messageArray.length,
+            last_activity: new Date().toISOString(),
+            chat_history: messageArray,
+            tags: []
+          };
+        });
+      } else if (Array.isArray(response)) {
+        sessionsArr = response;
+      } else if (Array.isArray(response.sessions)) {
+        sessionsArr = response.sessions;
+      }
+      
+      // Transform backend response to ChatSession format
+      const transformedSessions: ChatSession[] = sessionsArr.map((session: any) => ({
+        id: session.session_id,
+        title: session.title || `Chat ${session.session_id?.slice(-6) || ''}`,
+        preview: session.preview || (session.chat_history && session.chat_history.length > 0 ? 
+          (session.chat_history[0].user || session.chat_history[0].assistant || 'No preview available') : 'No preview available'),
+        timestamp: session.timestamp || session.lastActivity || new Date().toISOString(),
+        messageCount: session.message_count || (session.chat_history ? session.chat_history.length : 0),
+        lastActivity: session.last_activity || session.timestamp || new Date().toISOString(),
+        tags: session.tags || [],
+        isActive: session.session_id === localStorage.getItem('moneymentor_session_id')
+      }));
+      
+      setChatSessions(transformedSessions);
+    } catch (error) {
+      console.error('Failed to fetch sessions:', error);
+      setSessionsError(error instanceof Error ? error.message : 'Failed to load sessions');
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
+  // Fetch sessions when sidebar opens
+  useEffect(() => {
+    if (sidebarHook.sidebarState.isOpen && userId) {
+      fetchSessions();
+    }
+  }, [sidebarHook.sidebarState.isOpen, userId]);
 
   // Create window instances
   const chatWindow = new WindowInstance(
@@ -553,10 +739,22 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   // Initialize session when widget opens
   useEffect(() => {
-    if (isOpen && sessionIds.sessionId && sessionIds.userId) {
-      handleInitializeSession();
+    if (isOpen && sessionIds.userId) {
+      // Ensure session ID is available
+      if (!sessionIds.sessionId) {
+        setNewChatSession();
+        const newSessionId = localStorage.getItem('moneymentor_session_id') || uuidv4();
+        setSessionIds({ ...sessionIds, sessionId: newSessionId });
+      }
+      
+      // If this is the first time opening and no messages exist, treat it like a new chat
+      if (chatMessages.length === 0 && learnMessages.length === 0) {
+        handleNewChat();
+      } else {
+        handleInitializeSession();
+      }
     }
-  }, [isOpen, sessionIds.sessionId, sessionIds.userId]);
+  }, [isOpen, sessionIds.userId]);
 
   // Session initialization
   const handleInitializeSession = async () => {
@@ -592,7 +790,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       // Add user message to chat
       const userMessage = createUserMessage(
         messageText,
-        sessionIds.sessionId,
+        apiConfig.sessionId,
         sessionIds.userId
       );
       setChatMessages(prev => [...prev, userMessage]);
@@ -606,15 +804,15 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       let streamingContent = '';
       let assistantMessageId = '';
       
-      // Create initial assistant message
+      // Create initial assistant message with "Thinking..." state
       const initialAssistantMessage = createAssistantMessage(
-        '',
-        sessionIds.sessionId,
+        '**Thinking...**',
+        apiConfig.sessionId,
         sessionIds.userId
       );
       assistantMessageId = initialAssistantMessage.id;
       
-      // Add the initial empty assistant message
+      // Add the initial "Thinking..." message
       setChatMessages(prev => [...prev, initialAssistantMessage]);
       
       await sendChatMessageStream(
@@ -624,17 +822,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           // Update the streaming content
           streamingContent += chunk;
           
-         
-          
           // Update the assistant message with streaming content
           setChatMessages(prev => {
             const newMessages = [...prev];
             const messageIndex = newMessages.findIndex(msg => msg.id === assistantMessageId);
             
             if (messageIndex !== -1) {
+              // Remove "Thinking..." and show actual content
+              const displayContent = streamingContent.trim() || '**Thinking...**';
               newMessages[messageIndex] = {
                 ...newMessages[messageIndex],
-                content: streamingContent
+                content: displayContent
               };
             }
             
@@ -643,15 +841,32 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         },
         (response: any) => {
           fullResponse = response;
+          
+          // Update session ID if backend returns a different one
+          if (response.session_id && response.session_id !== apiConfig.sessionId) {
+            setActiveSession(response.session_id);
+            setSessionIds({ ...sessionIds, sessionId: response.session_id });
+            
+            // Update the session ID in all messages
+            setChatMessages(prev => prev.map(msg => ({
+              ...msg,
+              sessionId: response.session_id
+            })));
+          }
         },
         (error: Error) => {
           console.error('Streaming error:', error);
-          const errorMessage = createSystemMessage(
-            'Network error. Please check your connection.',
-            sessionIds.sessionId,
-            sessionIds.userId
-          );
-          setChatMessages(prev => [...prev, errorMessage]);
+          
+          // Remove the "Thinking..." message and replace with error
+          setChatMessages(prev => {
+            const newMessages = prev.filter(msg => msg.id !== assistantMessageId);
+            const errorMessage = createSystemMessage(
+              error.message || 'An error occurred while processing your request. Please try again.',
+              apiConfig.sessionId,
+              sessionIds.userId
+            );
+            return [...newMessages, errorMessage];
+          });
         }
       );
       
@@ -689,65 +904,38 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
             if (calculationResult) {
               setChatMessages(prev => {
                 const newMessages = [...prev];
-                if (newMessages.length > 0) {
-                  const lastMessage = newMessages[newMessages.length - 1];
-                  if (lastMessage.type === 'assistant') {
-                    lastMessage.metadata = {
-                      ...lastMessage.metadata,
-                      calculationResult: calculationResult
-                    };
-                  }
+                const messageIndex = newMessages.findIndex(msg => msg.id === assistantMessageId);
+                
+                if (messageIndex !== -1) {
+                  newMessages[messageIndex] = {
+                    ...newMessages[messageIndex],
+                    metadata: {
+                      ...newMessages[messageIndex].metadata,
+                      calculationResult
+                    }
+                  };
                 }
+                
                 return newMessages;
               });
             }
-          } catch (error) {
-            console.error('Error parsing calculation JSON:', error);
+          } catch (parseError) {
+            console.error('Failed to parse calculation JSON:', parseError);
           }
         }
         
-        // Handle quiz if present
+        // Handle quiz questions
         if (response.quiz) {
           setChatCurrentQuiz(response.quiz);
-        }
-      } else {
-        const errorMessage = createSystemMessage(
-          'Sorry, I encountered an error. Please try again.',
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-        setChatMessages(prev => [...prev, errorMessage]);
-      }
-      
-      // Check if we need to generate a quiz (after 3 user messages)
-      if (newMessageCount >= 3) {
-        try {
-          const quizResponse = await generateDiagnosticQuiz(apiConfig);
-          const quizMessage = createSystemMessage(
-            `🎯 **Knowledge Check!**\n\nI've generated a quick quiz based on our conversation. Let's test your understanding!`,
-          sessionIds.sessionId,
-          sessionIds.userId
-        );
-          setChatMessages(prev => [...prev, quizMessage]);
-          
-          // Set the quiz
-          if (quizResponse.questions.length > 0) {
-            setChatCurrentQuiz(quizResponse.questions[0]);
-          }
-          
-          // Reset counter after generating quiz
-          setChatMessageCount(0);
-        } catch (quizError) {
-          console.error('Quiz generation error:', quizError);
-          // Don't show error to user, just continue with chat
+          setChatShowQuizFeedback(false);
         }
       }
       
     } catch (error) {
-      console.error('Chat error:', error);
+      console.error('Chat message error:', error);
       const errorMessage = createSystemMessage(
-        'Network error. Please check your connection.',
-        sessionIds.sessionId,
+        'Failed to send message. Please try again.',
+        apiConfig.sessionId,
         sessionIds.userId
       );
       setChatMessages(prev => [...prev, errorMessage]);
@@ -1060,8 +1248,12 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           setProfileModalState={profileHook.setProfileModalState}
           onSessionSelect={handleSessionSelect}
           onNewChat={handleNewChat}
+          onSessionDelete={handleSessionDelete}
           onProfileUpdate={profileHook.updateProfile}
           theme={currentTheme}
+          apiConfig={apiConfig}
+          isLoadingSessions={isLoadingSessions}
+          sessionsError={sessionsError}
         />
       )}
 
@@ -1197,12 +1389,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
               {message.metadata?.calculationResult && (
                 <CalculationResult result={message.metadata.calculationResult} />
               )}
-              <div className="message-time">
-                {new Date(message.timestamp).toLocaleTimeString([], { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                })}
-              </div>
+
             </div>
           ))}
           {/* Diagnostic Test Component */}
@@ -1290,12 +1477,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                     {message.metadata?.calculationResult && (
                       <CalculationResult result={message.metadata.calculationResult} />
                     )}
-                    <div className="message-time">
-                      {new Date(message.timestamp).toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </div>
+
                   </div>
                 ))}
                 {/* Learn Diagnostic Test Component */}

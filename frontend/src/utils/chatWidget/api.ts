@@ -173,6 +173,15 @@ export const sendChatMessageStream = async (
   onError: (error: Error) => void
 ): Promise<void> => {
   try {
+    // Validate input parameters
+    if (!message || !message.trim()) {
+      throw new Error('Query cannot be empty');
+    }
+    
+    if (!config.sessionId || !config.sessionId.trim()) {
+      throw new Error('Session ID cannot be empty');
+    }
+
     const response = await fetch(`${BACKEND_URL}/api/chat/message/stream`, {
       method: 'POST',
       headers: {
@@ -180,13 +189,19 @@ export const sendChatMessageStream = async (
         ...withAuth()
       },
       body: JSON.stringify({
-        query: message,
-        session_id: config.sessionId
+        query: message.trim(),
+        session_id: config.sessionId.trim()
       })
     });
 
+    // Handle different response status codes
+    if (response.status === 422) {
+      throw new Error('Invalid request: Please check your input and try again.');
+    }
+    
     if (!response.ok) {
-      throw new Error(`Failed to send message: ${response.status} ${response.statusText}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to send message: ${response.status} ${response.statusText}`);
     }
 
     const reader = response.body?.getReader();
@@ -196,6 +211,8 @@ export const sendChatMessageStream = async (
 
     const decoder = new TextDecoder();
     let fullResponse = '';
+    let hasReceivedFirstChunk = false;
+    let errorDetected = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -204,17 +221,51 @@ export const sendChatMessageStream = async (
         break;
       }
 
-      // Decode the chunk - this is raw content from OpenAI streaming
+      // Decode the chunk
       const chunk = decoder.decode(value, { stream: true });
+      
+      // Check for error responses (even with 200 status)
+      if (chunk.includes('"type": "error"') || chunk.includes('error')) {
+        errorDetected = true;
+        try {
+          // Try to parse the error data
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonStr = line.replace('data: ', '');
+              try {
+                const errorData = JSON.parse(jsonStr);
+                if (errorData.type === 'error') {
+                  throw new Error(errorData.message || 'An error occurred while processing your request.');
+                }
+              } catch (parseError) {
+                // Continue checking other lines
+              }
+            }
+          }
+          // If we can't parse specific error, throw generic error
+          throw new Error('An error occurred while processing your request. Please try again.');
+        } catch (parseError) {
+          // If we can't parse the error, just throw the raw chunk
+          throw new Error('An error occurred while processing your request.');
+        }
+      }
       
       // Add to full response
       fullResponse += chunk;
       
-      // Debug: Log chunks for development
-    
+      // Mark that we've received the first chunk
+      if (!hasReceivedFirstChunk) {
+        hasReceivedFirstChunk = true;
+      }
       
       // Send the chunk to the UI for real-time updates
       onChunk(chunk);
+    }
+
+    // If we detected an error but didn't throw, handle it now
+    if (errorDetected) {
+      throw new Error('An error occurred while processing your request. Please try again.');
     }
 
     // Create final response object
@@ -705,5 +756,58 @@ export const deleteUserAccount = async (currentPassword: string): Promise<any> =
     throw new Error(errorData.detail || 'Failed to delete account');
   }
   
+  return response.json();
+}; 
+
+// Chat Session Management API calls
+export const getAllUserSessions = async (config: ApiConfig): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/chat/history/`, {
+    method: 'GET'
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to fetch chat sessions');
+  }
+
+  return response.json();
+};
+
+export const getSessionHistory = async (config: ApiConfig, sessionId: string): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/chat/history/${sessionId}`, {
+    method: 'GET'
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to fetch session history');
+  }
+
+  return response.json();
+};
+
+export const clearSessionHistory = async (config: ApiConfig, sessionId: string): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/chat/history/${sessionId}`, {
+    method: 'DELETE'
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to clear session history');
+  }
+
+  return response.json();
+};
+
+export const deleteSession = async (config: ApiConfig, sessionId: string): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/chat/session/${sessionId}`, {
+    method: 'DELETE'
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete session');
+  }
+
   return response.json();
 }; 

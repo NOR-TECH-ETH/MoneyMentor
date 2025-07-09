@@ -318,8 +318,22 @@ class CourseRecommendation(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     """Schema for chat message request"""
-    query: str = Field(..., description="The user's query")
-    session_id: str = Field(..., description="Session identifier (any string, not restricted to UUID v4)")
+    query: str = Field(..., min_length=1, description="The user's query (cannot be empty)")
+    session_id: str = Field(..., min_length=1, description="Session identifier (any string, not restricted to UUID v4)")
+    
+    @field_validator('query')
+    @classmethod
+    def validate_query_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('query cannot be empty or whitespace only')
+        return v.strip()
+    
+    @field_validator('session_id')
+    @classmethod
+    def validate_session_id_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('session_id cannot be empty or whitespace only')
+        return v.strip()
     
     class Config:
         json_schema_extra = {

@@ -320,20 +320,31 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
-.message-time {
-  font-size: 11px;
-  color: #6b7280;
-  margin-top: 4px;
-  align-self: flex-end;
+/* Shimmer effect for "Thinking..." text */
+.thinking-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+  border-radius: 4px;
+  padding: 4px 8px;
+  display: inline-block;
+  font-weight: bold;
+  color: #374151;
 }
 
-.message.user .message-time {
-  align-self: flex-end;
+.chat-widget.dark .thinking-shimmer {
+  background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+  background-size: 200% 100%;
+  color: #f9fafb;
 }
 
-.message.assistant .message-time,
-.message.system .message-time {
-  align-self: flex-start;
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 /* Quiz Styles */

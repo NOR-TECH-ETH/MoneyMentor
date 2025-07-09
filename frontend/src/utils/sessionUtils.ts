@@ -70,7 +70,7 @@ export const refreshAccessToken = async (): Promise<boolean> => {
     }
 
     const result = await refreshToken(refreshTokenValue);
-    
+
     if (result && result.access_token && result.refresh_token) {
       // Store new tokens
       Cookies.set('auth_token', result.access_token, { expires: 30 });

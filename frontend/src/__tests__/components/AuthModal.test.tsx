@@ -334,7 +334,7 @@ describe('Logout Function', () => {
 
   it('should handle successful logout with timing', async () => {
     vi.mocked(logoutUser).mockResolvedValue({ success: true })
-    vi.mocked(Cookies.get).mockReturnValue('test-refresh-token')
+    vi.mocked(Cookies.get).mockReturnValue({ refreshToken: 'test-refresh-token' })
     
     const startTime = performance.now()
     await logout()
@@ -342,7 +342,7 @@ describe('Logout Function', () => {
     
     const executionTime = endTime - startTime
     
-    expect(logoutUser).toHaveBeenCalledWith('test-refresh-token')
+    expect(logoutUser).toHaveBeenCalledWith({ refreshToken: 'test-refresh-token' })
     expect(Cookies.remove).toHaveBeenCalledWith('auth_token')
     expect(Cookies.remove).toHaveBeenCalledWith('refresh_token')
     expect(localStorage.removeItem).toHaveBeenCalledWith('auth_token_expires')
@@ -370,7 +370,7 @@ describe('Logout Function', () => {
 
   it('should handle logout error gracefully', async () => {
     vi.mocked(logoutUser).mockRejectedValue(new Error('Network error'))
-    vi.mocked(Cookies.get).mockReturnValue('test-refresh-token')
+    vi.mocked(Cookies.get).mockReturnValue({ refreshToken: 'test-refresh-token' })
     
     const startTime = performance.now()
     await logout()
@@ -378,7 +378,7 @@ describe('Logout Function', () => {
     
     const executionTime = endTime - startTime
     
-    expect(logoutUser).toHaveBeenCalledWith('test-refresh-token')
+    expect(logoutUser).toHaveBeenCalledWith({ refreshToken: 'test-refresh-token' })
     expect(Cookies.remove).toHaveBeenCalledWith('auth_token')
     expect(Cookies.remove).toHaveBeenCalledWith('refresh_token')
     expect(window.location.reload).toHaveBeenCalled()
@@ -389,7 +389,7 @@ describe('Logout Function', () => {
     vi.mocked(logoutUser).mockImplementation(() => 
       new Promise(resolve => setTimeout(resolve, 1000))
     )
-    vi.mocked(Cookies.get).mockReturnValue('test-refresh-token')
+    vi.mocked(Cookies.get).mockReturnValue({ refreshToken: 'test-refresh-token' })
     
     const startTime = performance.now()
     

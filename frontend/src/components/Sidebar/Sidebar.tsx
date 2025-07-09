@@ -5,6 +5,7 @@ import { ProfileButton } from './ProfileButton';
 import { ProfileModal } from './ProfileModal';
 import { useClickOutside } from '../../hooks';
 import { handleOutsideClick, handleEscapeKey } from '../../logic/sidebarHandlers';
+import { ApiConfig } from '../../utils/chatWidget/api';
 import '../../styles/sidebar.css';
 
 interface SidebarProps {
@@ -17,7 +18,11 @@ interface SidebarProps {
   onSessionSelect: (sessionId: string) => void;
   onNewChat: () => void;
   onProfileUpdate: (profile: Partial<UserProfile>) => void;
+  onSessionDelete?: (sessionId: string) => Promise<void>;
   theme?: 'light' | 'dark';
+  apiConfig?: ApiConfig;
+  isLoadingSessions?: boolean;
+  sessionsError?: string | null;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -30,7 +35,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSessionSelect,
   onNewChat,
   onProfileUpdate,
-  theme = 'light'
+  onSessionDelete,
+  theme = 'light',
+  apiConfig,
+  isLoadingSessions = false,
+  sessionsError = null
 }) => {
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -121,19 +130,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
 
         {/* Chat Sessions List */}
-        <ChatSessionsList
-          sessions={chatSessions}
-          selectedSessionId={sidebarState.selectedSessionId}
-          onSessionSelect={handleSessionClick}
-          isCollapsed={sidebarState.isCollapsed}
-        />
+        <div className="chat-sessions-container">
+          <ChatSessionsList
+            sessions={chatSessions}
+            selectedSessionId={sidebarState.selectedSessionId}
+            onSessionSelect={handleSessionClick}
+            onSessionDelete={onSessionDelete}
+            isCollapsed={sidebarState.isCollapsed}
+            isLoading={isLoadingSessions}
+            theme={theme}
+          />
+          
+          {/* Error message */}
+          {sessionsError && !isLoadingSessions && (
+            <div className="sessions-error">
+              <div className="error-icon">⚠️</div>
+              <div className="error-text">{sessionsError}</div>
+              <button 
+                className="retry-btn"
+                onClick={() => window.location.reload()}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+        </div>
 
-        {/* Profile Section */}
-        <ProfileButton
-          userProfile={userProfile}
-          isCollapsed={sidebarState.isCollapsed}
-          onClick={() => setProfileModalState({ isOpen: true, activeTab: 'profile' })}
-        />
+        {/* Profile Section - Fixed at bottom */}
+        <div className="sidebar-profile-section">
+          <ProfileButton
+            userProfile={userProfile}
+            isCollapsed={sidebarState.isCollapsed}
+            onClick={() => setProfileModalState({ isOpen: true, activeTab: 'profile' })}
+          />
+        </div>
       </div>
 
       {/* Profile Modal */}
@@ -142,7 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         activeTab={profileModalState.activeTab}
         userProfile={userProfile}
         onClose={() => setProfileModalState({ isOpen: false, activeTab: 'profile' })}
-        onTabSwitch={(tab) => setProfileModalState({ ...profileModalState, activeTab: tab })}
+        onTabSwitch={(tab) => setProfileModalState({ isOpen: true, activeTab: tab })}
         onProfileUpdate={onProfileUpdate}
         theme={theme}
       />

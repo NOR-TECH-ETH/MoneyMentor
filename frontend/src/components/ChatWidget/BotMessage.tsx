@@ -129,7 +129,18 @@ const BotMessage: React.FC<BotMessageProps> = ({
 
   // Simple paragraph component that preserves original content
   const p = memo((props: any) => {
-    return <p className="whitespace-pre-wrap mb-2 leading-relaxed">{props?.children}</p>;
+    const content = props?.children;
+    const isThinking = typeof content === 'string' && content.includes('**Thinking...**');
+    
+    if (isThinking) {
+      return (
+        <p className="whitespace-pre-wrap mb-2 leading-relaxed">
+          <span className="thinking-shimmer">Thinking...</span>
+        </p>
+      );
+    }
+    
+    return <p className="whitespace-pre-wrap mb-2 leading-relaxed">{content}</p>;
   });
 
   return (
