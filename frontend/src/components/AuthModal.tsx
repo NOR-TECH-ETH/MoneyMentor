@@ -176,24 +176,25 @@ export const logout = async () => {
   }
   
   logoutInProgress = true;
-  
+
+  // Clear all auth data and reload immediately
+  Cookies.remove('auth_token');
+
+  localStorage.removeItem('auth_token_expires');
+  localStorage.removeItem('moneymentor_user_id');
+  localStorage.removeItem('moneymentor_user_name');
+  localStorage.removeItem('moneymentor_session_id');
+
+  // Fire-and-forget logout API call in the background
   try {
     const refreshToken = Cookies.get('refresh_token');
     if (refreshToken) {
-      await logoutUser(refreshToken);
+      logoutUser(refreshToken); // Don't await
+      Cookies.remove('refresh_token');
     }
   } catch (error) {
-    console.error('Logout error:', error);
+    // Ignore errors
   } finally {
-    // Clear all auth data
-    Cookies.remove('auth_token');
-    Cookies.remove('refresh_token');
-    localStorage.removeItem('auth_token_expires');
-    localStorage.removeItem('moneymentor_user_id');
-    localStorage.removeItem('moneymentor_user_name');
-    localStorage.removeItem('moneymentor_session_id');
-    
-    // Reset the flag and reload
     logoutInProgress = false;
     window.location.reload();
   }
