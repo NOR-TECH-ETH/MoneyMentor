@@ -388,6 +388,30 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [isAuthenticated, setIsAuthenticated] = useState(!!Cookies.get('auth_token') && !!Cookies.get('refresh_token') && !!localStorage.getItem('moneymentor_user_id'));
   const [showSessionExpiredModal, setShowSessionExpiredModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  // Add a ref to track the timeout
+  const sessionModalTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (showSessionExpiredModal) {
+      // Set a timeout to auto-logout after 60 seconds (appropriate for 60-minute sessions)
+      sessionModalTimeoutRef.current = setTimeout(() => {
+        handleLogout();
+      }, 60 * 1000);
+    } else {
+      // Clear the timeout if modal is closed
+      if (sessionModalTimeoutRef.current) {
+        clearTimeout(sessionModalTimeoutRef.current);
+        sessionModalTimeoutRef.current = null;
+      }
+    }
+    // Cleanup on unmount
+    return () => {
+      if (sessionModalTimeoutRef.current) {
+        clearTimeout(sessionModalTimeoutRef.current);
+        sessionModalTimeoutRef.current = null;
+      }
+    };
+  }, [showSessionExpiredModal]);
   
   useEffect(() => {
     const checkAuth = async () => {
@@ -402,7 +426,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         setShowSessionExpiredModal(true);
       }
       
-      // Check if session is about to expire (within 5 minutes)
+      // Check if session is about to expire (within 5 minutes for 60-minute sessions)
       if (isNowAuthenticated) {
         const sessionInfo = getSessionInfo();
         if (sessionInfo && sessionInfo.timeUntilExpiry > 0 && sessionInfo.timeUntilExpiry <= 5 * 60 * 1000) {
@@ -555,6 +579,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       
       // Clear current chat messages
       setChatMessages([]);
+      // Clear quiz state and generation
+      setChatCurrentQuiz(null);
+      setChatQuizGenerating(false);
+      setChatShowQuizFeedback(false);
+      setChatLastQuizAnswer(null);
       
       // Fetch session history from backend
       const sessionHistory = await getSessionHistory(apiConfig, sessionId);
@@ -662,13 +691,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         // Convert object format to array format
         sessionsArr = Object.entries(response.sessions).map(([sessionId, messages]: [string, any]) => {
           const messageArray = Array.isArray(messages) ? messages : [];
-          const lastMessage = messageArray.length > 0 ? messageArray[messageArray.length - 1] : null;
-          const firstMessage = messageArray.length > 0 ? messageArray[0] : null;
-          
+          // Find first user and first assistant message
+          const firstUserMsg = messageArray.find((m: any) => m.user);
+          const firstAssistantMsg = messageArray.find((m: any) => m.assistant);
           return {
             session_id: sessionId,
-            title: `Chat ${sessionId.slice(-6)}`,
-            preview: lastMessage?.user || lastMessage?.assistant || 'No preview available',
+            title: firstUserMsg ? firstUserMsg.user.slice(0, 40) : `Chat ${sessionId.slice(-6)}`,
+            preview: firstAssistantMsg ? firstAssistantMsg.assistant.slice(0, 60) : 'No preview available',
             timestamp: new Date().toISOString(), // Use current time as fallback
             message_count: messageArray.length,
             last_activity: new Date().toISOString(),
@@ -995,6 +1024,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     return chatWindow.handleSubmitCourseQuiz(chatCurrentCourse?.id || '', pageIndex, selectedOptionLetter, correct, currentTotalPages);
   };
   const handleChatQuizAnswer = async (selectedOption: number, correct: boolean) => {
+    // Clear quiz state immediately to hide the container
+    setChatCurrentQuiz(null);
+    setChatShowQuizFeedback(false);
+    setChatLastQuizAnswer(null);
+    
     // Increment total answered
     setChatQuizTotalAnswered(prev => prev + 1);
     // Increment correct answered if correct
@@ -1036,11 +1070,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         console.error('Failed to submit micro quiz:', err);
       }
     }
-
-    // Clear quiz/feedback state
-    setChatShowQuizFeedback(false);
-    setChatLastQuizAnswer(null);
-    setChatCurrentQuiz(null);
   };
   const handleChatFileUpload = async (files: FileList) => {
     const validation = validateFiles(files);
@@ -1364,12 +1393,19 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         // Generate micro quiz
         try {
           const quizData = await generateMicroQuiz(apiConfig);
-          const quizWithId = {
-            ...quizData.questions[0],
-            id: quizData.quizId // Add the quiz ID to the question object
-          };
-          setChatCurrentQuiz(quizWithId); // Show first question with ID
-          setChatShowQuizFeedback(false);
+          // Only set quiz if sessionId is still the active session
+          if (sessionIds.sessionId === sessionId) {
+            const quizWithId = {
+              ...quizData.questions[0],
+              id: quizData.quizId // Add the quiz ID to the question object
+            };
+            setChatCurrentQuiz(quizWithId); // Show first question with ID
+            setChatShowQuizFeedback(false);
+          } else {
+            // Session changed, do not show quiz
+            setChatQuizGenerating(false);
+            return;
+          }
         } catch (err: any) {
           console.error('Failed to generate quiz:', err);
           setChatCountError('Failed to generate quiz');

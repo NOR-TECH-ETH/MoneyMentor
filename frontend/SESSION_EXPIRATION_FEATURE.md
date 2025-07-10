@@ -88,4 +88,11 @@ clearTestSession();
 
 - Uses `js-cookie` library for cross-browser cookie handling
 - Uses `localStorage` for expiration tracking (supported in all modern browsers)
-- Graceful fallback if localStorage is not available 
+- Graceful fallback if localStorage is not available
+
+## Session Configuration
+
+- **Access Token Expiration**: 60 minutes (matches backend configuration)
+- **Refresh Token Expiration**: 7 days
+- **Warning Time**: 5 minutes before expiration
+- **Auto-logout Timeout**: 60 seconds if user doesn't respond to modal 

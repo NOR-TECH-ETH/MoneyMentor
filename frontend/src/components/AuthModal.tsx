@@ -130,17 +130,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onAuthSuccess }) => {
             sx={{ mb: 2 }}
           />
 
-          <FormControlLabel
-            control={
-              <Checkbox
-            checked={keepLoggedIn}
-                onChange={(e) => setKeepLoggedIn(e.target.checked)}
-                size="small"
-              />
-            }
-            label="Keep me logged in for 30 days"
-            sx={{ mb: 2 }}
-          />
+          {/* Removed keepLoggedIn checkbox */}
 
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>

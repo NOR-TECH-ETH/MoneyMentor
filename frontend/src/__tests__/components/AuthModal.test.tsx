@@ -299,26 +299,6 @@ describe('AuthModal', () => {
       expect(loginUser).not.toHaveBeenCalled()
     })
   })
-
-  describe('Keep Logged In Checkbox', () => {
-    it('should toggle keep logged in checkbox', async () => {
-      const user = userEvent.setup()
-      render(<AuthModal isOpen={true} onAuthSuccess={mockOnAuthSuccess} />)
-      
-      const checkbox = screen.getByLabelText(/keep me logged in/i)
-      
-      const startTime = performance.now()
-      await user.click(checkbox)
-      const endTime = performance.now()
-      
-      // Checkbox toggle should be instant
-      expect(endTime - startTime).toBeLessThan(100)
-      expect(checkbox).not.toBeChecked()
-      
-      await user.click(checkbox)
-      expect(checkbox).toBeChecked()
-    })
-  })
 })
 
 describe('Logout Function', () => {

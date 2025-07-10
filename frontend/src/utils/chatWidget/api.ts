@@ -47,8 +47,8 @@ export const makeAuthenticatedRequest = async (
         const refreshResult = await refreshToken(refreshTokenValue);
         
         if (refreshResult && refreshResult.access_token) {
-          // Update the stored token
-          Cookies.set('auth_token', refreshResult.access_token, { expires: 30 });
+          // Update the stored token - match backend configuration
+          Cookies.set('auth_token', refreshResult.access_token, { expires: 1/24 }); // 60 minutes
           
           // Retry the original request with the new token
           const newHeaders = {

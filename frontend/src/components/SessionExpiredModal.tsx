@@ -25,7 +25,6 @@ const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
   onStayLoggedIn, 
   onLogout 
 }) => {
-  const [keepLoggedIn, setKeepLoggedIn] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
 
@@ -81,16 +80,7 @@ const SessionExpiredModal: React.FC<SessionExpiredModalProps> = ({
         
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <FormControlLabel
-            control={
-              <Checkbox
-            checked={keepLoggedIn}
-                onChange={(e) => setKeepLoggedIn(e.target.checked)}
-                size="small"
-          />
-            }
-            label="Keep me logged in for 30 days"
-          />
+          {/* Removed keepLoggedIn checkbox */}
 
           {error && (
             <Alert severity="error" sx={{ width: '100%' }}>

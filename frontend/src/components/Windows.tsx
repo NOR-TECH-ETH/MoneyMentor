@@ -97,9 +97,9 @@ export const Windows: React.FC<WindowsProps> = ({
             {quizProgressLoading ? (
               <Skeleton width={32} height={16} baseColor="#a5b4fc" highlightColor="#c7d2fe" style={{ borderRadius: 8 }} />
             ) : (
-              <span className="quiz-progress-simple-text" style={{ lineHeight: '1' }}>
-                {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
-              </span>
+            <span className="quiz-progress-simple-text" style={{ lineHeight: '1' }}>
+              {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
+            </span>
             )}
           </button>
           <QuizHistoryDropdown

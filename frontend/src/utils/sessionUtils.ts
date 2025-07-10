@@ -46,7 +46,7 @@ export const getSessionInfo = (): SessionInfo | null => {
 };
 
 /**
- * Check if session is expired or will expire soon (within 5 minutes)
+ * Check if session is expired or will expire soon (within 5 minutes for 60-minute sessions)
  */
 export const isSessionExpiredOrExpiringSoon = (): boolean => {
   const sessionInfo = getSessionInfo();
@@ -54,7 +54,7 @@ export const isSessionExpiredOrExpiringSoon = (): boolean => {
 
   // Consider expired if:
   // 1. Session is already expired
-  // 2. Session will expire within 5 minutes
+  // 2. Session will expire within 5 minutes (appropriate for 60-minute sessions)
   const fiveMinutes = 5 * 60 * 1000;
   return sessionInfo.isExpired || sessionInfo.timeUntilExpiry <= fiveMinutes;
 };
@@ -72,12 +72,12 @@ export const refreshAccessToken = async (): Promise<boolean> => {
     const result = await refreshToken(refreshTokenValue);
 
     if (result && result.access_token && result.refresh_token) {
-      // Store new tokens
-      Cookies.set('auth_token', result.access_token, { expires: 30 });
-      Cookies.set('refresh_token', result.refresh_token, { expires: 30 });
+      // Store new tokens - match backend configuration
+      Cookies.set('auth_token', result.access_token, { expires: 1/24 }); // 60 minutes (1/24 days)
+      Cookies.set('refresh_token', result.refresh_token, { expires: 7 }); // 7 days for refresh token
       
-      // Update expiration time
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      // Update expiration time - 60 minutes
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 minutes
       localStorage.setItem('auth_token_expires', expiresAt.toISOString());
       
       return true;
@@ -113,15 +113,15 @@ export const clearSession = (): void => {
  */
 export const storeAuthData = (authData: any): void => {
   if (authData.access_token && authData.refresh_token && authData.user?.id) {
-    // Store tokens
-    Cookies.set('auth_token', authData.access_token, { expires: 30 });
-    Cookies.set('refresh_token', authData.refresh_token, { expires: 30 });
+    // Store tokens - match backend configuration
+    Cookies.set('auth_token', authData.access_token, { expires: 1/24 }); // 60 minutes (1/24 days)
+    Cookies.set('refresh_token', authData.refresh_token, { expires: 7 }); // 7 days for refresh token
     
     // Store user ID from backend
     localStorage.setItem('moneymentor_user_id', authData.user.id);
     
-    // Store expiration time
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    // Store expiration time - 60 minutes
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 minutes
     localStorage.setItem('auth_token_expires', expiresAt.toISOString());
   }
 }; 

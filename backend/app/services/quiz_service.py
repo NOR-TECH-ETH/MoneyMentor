@@ -189,13 +189,13 @@ class QuizService:
                 except Exception as e2:
                     logger.error(f"Failed to parse question JSON even after cleaning: {e2}")
                     return None
-            if 'question' in question_data and 'choices' in question_data and 'correct_answer' in question_data:
-                return {
-                    'question': question_data['question'],
-                    'choices': question_data['choices'],
-                    'correct_answer': question_data['correct_answer'],
-                    'explanation': question_data.get('explanation', '')
-                }
+                if 'question' in question_data and 'choices' in question_data and 'correct_answer' in question_data:
+                    return {
+                        'question': question_data['question'],
+                        'choices': question_data['choices'],
+                        'correct_answer': question_data['correct_answer'],
+                        'explanation': question_data.get('explanation', '')
+                    }
             return None
         except Exception as e:
             logger.error(f"Failed to generate question for topic {topic}: {e}")
