@@ -354,3 +354,43 @@ async def get_all_user_sessions_route(
         raise HTTPException(status_code=500, detail=str(e))
 
 # Performance endpoint removed - performance_monitor module not available 
+
+@router.get("/session/{session_id}/chat-count")
+async def get_session_chat_count(
+    session_id: str,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Get the number of chat messages in a session and whether a quiz should be generated"""
+    try:
+        session = await get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Count user messages in the session
+        chat_history = session.get("chat_history", [])
+        user_messages = [msg for msg in chat_history if msg.get("role") == "user"]
+        chat_count = len(user_messages)
+        
+        # Determine if quiz should be generated (every 3 messages)
+        should_generate_quiz = chat_count > 0 and chat_count % 3 == 0
+        
+        return {
+            "session_id": session_id,
+            "user_id": current_user["id"],
+            "chat_count": chat_count,
+            "should_generate_quiz": should_generate_quiz,
+            "messages_until_quiz": (3 - (chat_count % 3)) if chat_count % 3 != 0 else 0
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get session chat count: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get session chat count") 
+
+@router.get("/debug/list-session-ids")
+async def list_session_ids():
+    from app.core.database import get_supabase
+    supabase = get_supabase()
+    result = supabase.table("user_sessions").select("session_id").execute()
+    return {"session_ids": [row["session_id"] for row in result.data]} 

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import '../../styles/ChatWidget.css';
+import Skeleton from 'react-loading-skeleton';
 
 interface QuizHistoryDropdownProps {
   open: boolean;
@@ -14,13 +15,17 @@ interface QuizHistoryDropdownProps {
     explanation: string;
     topicTag?: string;
   }>;
+  loading?: boolean;
+  error?: string | null;
 }
 
 export const QuizHistoryDropdown: React.FC<QuizHistoryDropdownProps> = ({
   open,
   onClose,
   anchorRef,
-  quizHistory
+  quizHistory,
+  loading = false,
+  error = null
 }) => {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -122,7 +127,15 @@ export const QuizHistoryDropdown: React.FC<QuizHistoryDropdownProps> = ({
         padding: '10px 0 10px 0',
         maxHeight: '300px',
       }}>
-        {quizHistory.length === 0 && (
+        {loading ? (
+          <div style={{ padding: '18px' }}>
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} height={48} style={{ marginBottom: 12, borderRadius: 8 }} />
+            ))}
+          </div>
+        ) : error ? (
+          <div style={{ padding: '18px', color: '#ef4444', textAlign: 'center', fontSize: '14px' }}>{error}</div>
+        ) : quizHistory.length === 0 ? (
           <div style={{
             padding: '18px',
             color: '#888',
@@ -131,8 +144,8 @@ export const QuizHistoryDropdown: React.FC<QuizHistoryDropdownProps> = ({
           }}>
             No quizzes taken yet.
           </div>
-        )}
-        {quizHistory.map((quiz, idx) => (
+        ) : (
+          quizHistory.map((quiz, idx) => (
           <div key={idx} style={{
             padding: '12px 18px 14px 18px',
             borderBottom: '1px solid #f3f4f6',
@@ -186,7 +199,8 @@ export const QuizHistoryDropdown: React.FC<QuizHistoryDropdownProps> = ({
               <span style={{ fontWeight: '600', color: '#6366f1', marginRight: '4px' }}>💡 Explanation:</span> {quiz.explanation}
             </div>
           </div>
-        ))}
+          ))
+        )}
       </div>
     </div>,
     document.body

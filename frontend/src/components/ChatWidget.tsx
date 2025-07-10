@@ -68,6 +68,7 @@ import {
   ApiConfig,
   sendChatMessageStream,
   generateDiagnosticQuiz,
+  generateMicroQuiz,
 
   uploadFile,
   
@@ -111,6 +112,9 @@ import { getMockChatSessions } from '../utils/sessions';
 import { getAllUserSessions, getSessionHistory, deleteSession } from '../utils/chatWidget/api';
 import { setActiveSession, setNewChatSession, isNewChatSession } from '../utils/chatWidget/session';
 import { isSessionExpiredOrExpiringSoon, getSessionInfo } from '../utils/sessionUtils';
+import { getSessionQuizProgress, getSessionQuizHistory, getSessionChatCount } from '../utils/chatWidget/api';
+import Skeleton from 'react-loading-skeleton';
+import { submitMicroQuiz } from '../utils/chatWidget/api';
 
 // Import styles
 import '../styles/windows.css';
@@ -751,8 +755,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       if (chatMessages.length === 0 && learnMessages.length === 0) {
         handleNewChat();
       } else {
-        handleInitializeSession();
-      }
+      handleInitializeSession();
+    }
     }
   }, [isOpen, sessionIds.userId]);
 
@@ -860,11 +864,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           // Remove the "Thinking..." message and replace with error
           setChatMessages(prev => {
             const newMessages = prev.filter(msg => msg.id !== assistantMessageId);
-            const errorMessage = createSystemMessage(
+          const errorMessage = createSystemMessage(
               error.message || 'An error occurred while processing your request. Please try again.',
               apiConfig.sessionId,
-              sessionIds.userId
-            );
+            sessionIds.userId
+          );
             return [...newMessages, errorMessage];
           });
         }
@@ -913,8 +917,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
                       ...newMessages[messageIndex].metadata,
                       calculationResult
                     }
-                  };
-                }
+                    };
+                  }
                 
                 return newMessages;
               });
@@ -930,6 +934,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           setChatShowQuizFeedback(false);
         }
       }
+      
+      // After successful message send, check if we should generate a quiz
+      await fetchChatCountAndMaybeTriggerQuiz(apiConfig.sessionId);
       
     } catch (error) {
       console.error('Chat message error:', error);
@@ -958,7 +965,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     const currentTotalPages = chatCourseQuiz?.totalPages; // Get current total pages from quiz state
     return chatWindow.handleSubmitCourseQuiz(chatCurrentCourse?.id || '', pageIndex, selectedOptionLetter, correct, currentTotalPages);
   };
-  const handleChatQuizAnswer = (selectedOption: number, correct: boolean) => {
+  const handleChatQuizAnswer = async (selectedOption: number, correct: boolean) => {
     // Increment total answered
     setChatQuizTotalAnswered(prev => prev + 1);
     // Increment correct answered if correct
@@ -992,6 +999,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           topicTag: chatCurrentQuiz.topicTag || '',
         }
       ]);
+      
+      // Submit micro quiz answer to backend
+      try {
+        await submitMicroQuiz(apiConfig, chatCurrentQuiz.id || '', chatCurrentQuiz, selectedOption, correct, sessionIds.userId);
+      } catch (err) {
+        console.error('Failed to submit micro quiz:', err);
+      }
     }
 
     // Clear quiz/feedback state
@@ -1228,6 +1242,143 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     return () => window.removeEventListener('start-recommended-course', handler);
   }, [learnWindow]);
 
+  // Add state for loading and error
+  const [quizProgressLoading, setQuizProgressLoading] = useState(false);
+  const [quizProgressError, setQuizProgressError] = useState<string | null>(null);
+  const [quizHistoryLoading, setQuizHistoryLoading] = useState(false);
+  const [quizHistoryError, setQuizHistoryError] = useState<string | null>(null);
+  const [chatCountLoading, setChatCountLoading] = useState(false);
+  const [chatCountError, setChatCountError] = useState<string | null>(null);
+
+  // Fetch quiz progress for the current session
+  const fetchQuizProgress = async (sessionId: string) => {
+    setQuizProgressLoading(true);
+    setQuizProgressError(null);
+    try {
+      const progress = await getSessionQuizProgress(apiConfig, sessionId);
+      setChatQuizCorrectAnswered(progress.correct_answers);
+      setChatQuizTotalAnswered(progress.total_quizzes);
+    } catch (err: any) {
+      setQuizProgressError(err.message || 'Failed to fetch quiz progress');
+      setChatQuizCorrectAnswered(0);
+      setChatQuizTotalAnswered(0);
+    } finally {
+      setQuizProgressLoading(false);
+    }
+  };
+
+  // Fetch quiz history for the current session
+  const fetchQuizHistory = async (sessionId: string) => {
+    setQuizHistoryLoading(true);
+    setQuizHistoryError(null);
+    try {
+      const history = await getSessionQuizHistory(apiConfig, sessionId);
+      
+      // Transform backend data to match frontend expectations
+      const transformedHistory = (history.quiz_history || []).map((quiz: any) => {
+        // Handle different formats of choices (array or object)
+        let options = ['A', 'B', 'C', 'D'];
+        if (quiz.question_data?.choices) {
+          if (Array.isArray(quiz.question_data.choices)) {
+            options = quiz.question_data.choices;
+          } else if (typeof quiz.question_data.choices === 'object') {
+            options = Object.values(quiz.question_data.choices);
+          }
+        }
+        
+        // Convert correct answer from letter to index
+        let correctAnswer = 0;
+        if (quiz.question_data?.correct_answer) {
+          const correctLetter = quiz.question_data.correct_answer;
+          correctAnswer = correctLetter.charCodeAt(0) - 65; // 'A' -> 0, 'B' -> 1, etc.
+        }
+        
+        // Convert user answer from letter to index
+        let userAnswer = 0;
+        if (quiz.selected) {
+          const userLetter = quiz.selected;
+          userAnswer = userLetter.charCodeAt(0) - 65; // 'A' -> 0, 'B' -> 1, etc.
+        }
+        
+        return {
+          question: quiz.question_data?.question || `Quiz ${quiz.quiz_id}`,
+          options: options,
+          correctAnswer: correctAnswer,
+          userAnswer: userAnswer,
+          explanation: quiz.question_data?.explanation || quiz.explanation || 'No explanation available',
+          topicTag: quiz.topic || ''
+        };
+      });
+      
+      setChatQuizHistory(transformedHistory);
+    } catch (err: any) {
+      setQuizHistoryError(err.message || 'Failed to fetch quiz history');
+      setChatQuizHistory([]);
+    } finally {
+      setQuizHistoryLoading(false);
+    }
+  };
+
+  // Fetch chat count and trigger quiz if needed
+  const fetchChatCountAndMaybeTriggerQuiz = async (sessionId: string) => {
+    setChatCountLoading(true);
+    setChatCountError(null);
+    try {
+      const countData = await getSessionChatCount(apiConfig, sessionId);
+      setChatMessageCount(countData.chat_count);
+      if (countData.should_generate_quiz && !chatCurrentQuiz && !chatIsDiagnosticMode) {
+        // Show shimmer while generating quiz
+        setChatCurrentQuiz(null);
+        setChatShowQuizFeedback(false);
+        
+        // Generate micro quiz
+        try {
+          const quizData = await generateMicroQuiz(apiConfig);
+          const quizWithId = {
+            ...quizData.questions[0],
+            id: quizData.quizId // Add the quiz ID to the question object
+          };
+          setChatCurrentQuiz(quizWithId); // Show first question with ID
+          setChatShowQuizFeedback(false);
+        } catch (err: any) {
+          console.error('Failed to generate quiz:', err);
+          setChatCountError('Failed to generate quiz');
+        }
+      }
+    } catch (err: any) {
+      setChatCountError(err.message || 'Failed to fetch chat count');
+    } finally {
+      setChatCountLoading(false);
+    }
+  };
+
+  // On session change or mount, fetch quiz progress
+  useEffect(() => {
+    if (apiConfig.sessionId) {
+      fetchQuizProgress(apiConfig.sessionId);
+    }
+  }, [apiConfig.sessionId]);
+
+  // On quiz tracker button click, fetch quiz history
+  const handleQuizTrackerClick = () => {
+    if (apiConfig.sessionId) {
+      fetchQuizHistory(apiConfig.sessionId);
+      setShowQuizDropdown(true);
+    }
+  };
+
+  // After quiz submission, refetch quiz progress
+  const handleQuizSubmit = async (...args: any[]) => {
+    // Existing quiz submission logic...
+    await fetchQuizProgress(apiConfig.sessionId);
+  };
+
+  // After each user message, fetch chat count and maybe trigger quiz
+  const dispatchUserMessage = async (message: string) => {
+    // Existing send message logic...
+    await fetchChatCountAndMaybeTriggerQuiz(apiConfig.sessionId);
+  };
+
   // Render AuthModal if not authenticated
   if (!isAuthenticated) {
     return <AuthModal isOpen={true} onAuthSuccess={handleAuthSuccess} />;
@@ -1358,6 +1509,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           chatQuizTotalAnswered={chatQuizTotalAnswered}
           chatQuizHistory={chatQuizHistory}
           QuizHistoryDropdown={QuizHistoryDropdown}
+          onQuizTrackerClick={handleQuizTrackerClick}
+          quizProgressLoading={quizProgressLoading}
+          quizHistoryLoading={quizHistoryLoading}
+          quizHistoryError={quizHistoryError}
           chatChildren={
             <div className="chat-window">
               {/* Chat Messages Container with Scrollbar */}

@@ -12,17 +12,18 @@ import {
   handleEmailUpdate,
   handleThemeToggle
 } from '../../logic/profileHandlers';
-import { getUserProfile, updateUserProfile } from '../../utils/chatWidget/api';
+import { getUserProfile, updateUserProfile, getAllQuizHistory } from '../../utils/chatWidget/api';
 import { ProfileSkeleton } from './ProfileSkeleton';
 
 interface ProfileModalProps {
   isOpen: boolean;
-  activeTab: 'profile' | 'settings';
+  activeTab: 'profile' | 'settings' | 'quizzes';
   userProfile: UserProfile;
   onClose: () => void;
-  onTabSwitch: (tab: 'profile' | 'settings') => void;
+  onTabSwitch: (tab: 'profile' | 'settings' | 'quizzes') => void;
   onProfileUpdate: (profile: Partial<UserProfile>) => void;
   theme?: 'light' | 'dark';
+  apiConfig?: any; // For API calls
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({
@@ -32,7 +33,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onClose,
   onTabSwitch,
   onProfileUpdate,
-  theme = 'light'
+  theme = 'light',
+  apiConfig
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [editingEmail, setEditingEmail] = useState(false);
@@ -41,11 +43,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [backendProfile, setBackendProfile] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Quiz history state
+  const [quizHistory, setQuizHistory] = useState<any[]>([]);
+  const [quizHistoryLoading, setQuizHistoryLoading] = useState(false);
+  const [quizHistoryError, setQuizHistoryError] = useState<string | null>(null);
 
   // Fetch profile data when modal opens
   useEffect(() => {
     if (isOpen && activeTab === 'profile') {
       fetchProfileData();
+    }
+  }, [isOpen, activeTab]);
+
+  // Fetch quiz history when quizzes tab is active
+  useEffect(() => {
+    if (isOpen && activeTab === 'quizzes') {
+      fetchQuizHistory();
     }
   }, [isOpen, activeTab]);
 
@@ -73,6 +87,62 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       console.error('Failed to fetch profile:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchQuizHistory = async () => {
+    if (!apiConfig) return;
+    
+    setQuizHistoryLoading(true);
+    setQuizHistoryError(null);
+    
+    try {
+      const response = await getAllQuizHistory(apiConfig);
+      
+      // Transform backend data to match frontend expectations (same as ChatWidget)
+      const transformedHistory = (response.quiz_history || []).map((quiz: any) => {
+        // Handle different formats of choices (array or object)
+        let options = ['A', 'B', 'C', 'D'];
+        if (quiz.question_data?.choices) {
+          if (Array.isArray(quiz.question_data.choices)) {
+            options = quiz.question_data.choices;
+          } else if (typeof quiz.question_data.choices === 'object') {
+            options = Object.values(quiz.question_data.choices);
+          }
+        }
+        
+        // Convert correct answer from letter to index
+        let correctAnswer = 0;
+        if (quiz.question_data?.correct_answer) {
+          const correctLetter = quiz.question_data.correct_answer;
+          correctAnswer = correctLetter.charCodeAt(0) - 65; // 'A' -> 0, 'B' -> 1, etc.
+        }
+        
+        // Convert user answer from letter to index
+        let userAnswer = 0;
+        if (quiz.selected) {
+          const userLetter = quiz.selected;
+          userAnswer = userLetter.charCodeAt(0) - 65; // 'A' -> 0, 'B' -> 1, etc.
+        }
+        
+        return {
+          question: quiz.question_data?.question || `Quiz ${quiz.quiz_id}`,
+          options: options,
+          correctAnswer: correctAnswer,
+          userAnswer: userAnswer,
+          explanation: quiz.question_data?.explanation || quiz.explanation || 'No explanation available',
+          topicTag: quiz.topic || '',
+          timestamp: quiz.created_at,
+          quizType: quiz.quiz_type || 'micro'
+        };
+      });
+      
+      setQuizHistory(transformedHistory);
+    } catch (err) {
+      setQuizHistoryError(err instanceof Error ? err.message : 'Failed to load quiz history');
+      console.error('Failed to fetch quiz history:', err);
+    } finally {
+      setQuizHistoryLoading(false);
     }
   };
 
@@ -348,6 +418,98 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     </div>
   );
 
+  const renderQuizzesTab = () => {
+    if (quizHistoryLoading) {
+      return (
+        <div className="quiz-history-loading">
+          <div className="loading-spinner"></div>
+          <p>Loading quiz history...</p>
+        </div>
+      );
+    }
+
+    if (quizHistoryError) {
+      return (
+        <div className="quiz-history-error">
+          <div className="error-icon">⚠️</div>
+          <p>{quizHistoryError}</p>
+          <button 
+            className="btn btn-secondary" 
+            onClick={fetchQuizHistory}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+
+    if (quizHistory.length === 0) {
+      return (
+        <div className="quiz-history-empty">
+          <div className="empty-icon">📝</div>
+          <h3>No Quizzes Taken Yet</h3>
+          <p>Start chatting to generate quizzes and see your progress here!</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="quiz-history-list">
+        <div className="quiz-history-header">
+          <h3>Quizzes Taken ({quizHistory.length})</h3>
+        </div>
+        
+        {quizHistory.map((quiz, index) => (
+          <div key={index} className="quiz-history-item">
+            <div className="quiz-question">
+              <h4>{quiz.question}</h4>
+              <div className="quiz-topic">
+                {quiz.topicTag && <span className="topic-tag">{quiz.topicTag}</span>}
+                <span className="quiz-type">{quiz.quizType}</span>
+                <span className="quiz-date">
+                  {new Date(quiz.timestamp).toLocaleDateString()}
+                </span>
+              </div>
+            </div>
+            
+            <div className="quiz-options">
+              {quiz.options.map((option: string, optionIndex: number) => {
+                const isCorrect = optionIndex === quiz.correctAnswer;
+                const isUserAnswer = optionIndex === quiz.userAnswer;
+                const isCorrectAnswer = isCorrect;
+                const isWrongAnswer = isUserAnswer && !isCorrect;
+                
+                return (
+                  <div
+                    key={optionIndex}
+                    className={`quiz-option ${
+                      isCorrectAnswer ? 'correct' : 
+                      isWrongAnswer ? 'incorrect' : 
+                      isUserAnswer ? 'selected' : ''
+                    }`}
+                  >
+                    <span className="option-letter">
+                      {String.fromCharCode(65 + optionIndex)}
+                    </span>
+                    <span className="option-text">{option}</span>
+                    {isCorrectAnswer && <span className="correct-indicator">✓</span>}
+                    {isWrongAnswer && <span className="incorrect-indicator">✗</span>}
+                  </div>
+                );
+              })}
+            </div>
+            
+            {quiz.explanation && (
+              <div className="quiz-explanation">
+                <strong>Explanation:</strong> {quiz.explanation}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div 
       className={`profile-modal-overlay ${isOpen ? 'active' : ''}`}
@@ -377,6 +539,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               👤 Profile
             </button>
             <button
+              className={`modal-tab ${activeTab === 'quizzes' ? 'active' : ''}`}
+              onClick={() => onTabSwitch('quizzes')}
+            >
+              📝 Quizzes Taken
+            </button>
+            <button
               className={`modal-tab ${activeTab === 'settings' ? 'active' : ''}`}
               onClick={() => onTabSwitch('settings')}
             >
@@ -388,6 +556,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         <div className="modal-content">
           {activeTab === 'profile' && renderProfileTab()}
           {activeTab === 'settings' && renderSettingsTab()}
+          {activeTab === 'quizzes' && renderQuizzesTab()}
         </div>
       </div>
     </div>

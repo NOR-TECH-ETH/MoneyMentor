@@ -7,8 +7,8 @@ export const useSessionState = () => {
   // Initialize session on component mount
   useEffect(() => {
     try {
-      const ids = initializeSession();
-      setSessionIds(ids);
+    const ids = initializeSession();
+    setSessionIds(ids);
     } catch (error) {
       // If user is not authenticated, sessionIds will remain empty
       // This is expected when the user hasn't logged in yet

@@ -316,3 +316,133 @@ def test_get_all_user_sessions_exception(client):
         resp = client.get("/history/")
         assert resp.status_code == 500
         assert resp.json()["detail"] == "fail" 
+
+# --- /session/{session_id}/chat-count ---
+def test_get_session_chat_count_success(client):
+    """Test getting session chat count with messages"""
+    session_id = "test_session_123"
+    user_id = "550e8400-e29b-41d4-a716-446655440000"  # Match the mock user ID
+    
+    # Mock session with chat history
+    mock_session = {
+        "session_id": session_id,
+        "user_id": user_id,
+        "chat_history": [
+            {"role": "user", "content": "Hello", "timestamp": "2024-01-01T00:00:00"},
+            {"role": "assistant", "content": "Hi there!", "timestamp": "2024-01-01T00:00:01"},
+            {"role": "user", "content": "How are you?", "timestamp": "2024-01-01T00:00:02"},
+            {"role": "assistant", "content": "I'm doing well!", "timestamp": "2024-01-01T00:00:03"},
+            {"role": "user", "content": "What's the weather?", "timestamp": "2024-01-01T00:00:04"}
+        ]
+    }
+    
+    with patch("app.api.routes.chat.get_session", new=AsyncMock(return_value=mock_session)):
+        resp = client.get(f"/session/{session_id}/chat-count")
+        assert resp.status_code == 200
+        
+        data = resp.json()
+        assert data["session_id"] == session_id
+        assert data["user_id"] == user_id
+        assert data["chat_count"] == 3  # 3 user messages
+        assert data["should_generate_quiz"] is True  # 3 messages >= 3
+        assert data["messages_until_quiz"] == 0  # Already at 3 messages
+
+def test_get_session_chat_count_below_threshold(client):
+    """Test getting session chat count when below quiz threshold"""
+    session_id = "test_session_456"
+    user_id = "550e8400-e29b-41d4-a716-446655440000"  # Match the mock user ID
+    
+    # Mock session with fewer messages
+    mock_session = {
+        "session_id": session_id,
+        "user_id": user_id,
+        "chat_history": [
+            {"role": "user", "content": "Hello", "timestamp": "2024-01-01T00:00:00"},
+            {"role": "assistant", "content": "Hi there!", "timestamp": "2024-01-01T00:00:01"},
+            {"role": "user", "content": "How are you?", "timestamp": "2024-01-01T00:00:02"}
+        ]
+    }
+    
+    with patch("app.api.routes.chat.get_session", new=AsyncMock(return_value=mock_session)):
+        resp = client.get(f"/session/{session_id}/chat-count")
+        assert resp.status_code == 200
+        
+        data = resp.json()
+        assert data["session_id"] == session_id
+        assert data["user_id"] == user_id
+        assert data["chat_count"] == 2  # 2 user messages
+        assert data["should_generate_quiz"] is False  # 2 messages < 3
+        assert data["messages_until_quiz"] == 1  # Need 1 more message
+
+def test_get_session_chat_count_no_messages(client):
+    """Test getting session chat count with no messages"""
+    session_id = "test_session_789"
+    user_id = "550e8400-e29b-41d4-a716-446655440000"  # Match the mock user ID
+    
+    # Mock session with no chat history
+    mock_session = {
+        "session_id": session_id,
+        "user_id": user_id,
+        "chat_history": []
+    }
+    
+    with patch("app.api.routes.chat.get_session", new=AsyncMock(return_value=mock_session)):
+        resp = client.get(f"/session/{session_id}/chat-count")
+        assert resp.status_code == 200
+        
+        data = resp.json()
+        assert data["session_id"] == session_id
+        assert data["user_id"] == user_id
+        assert data["chat_count"] == 0  # No user messages
+        assert data["should_generate_quiz"] is False  # 0 messages < 3
+        assert data["messages_until_quiz"] == 3  # Need 3 more messages
+
+def test_get_session_chat_count_session_not_found(client):
+    """Test getting session chat count when session doesn't exist"""
+    session_id = "nonexistent_session"
+    
+    with patch("app.api.routes.chat.get_session", new=AsyncMock(return_value=None)):
+        resp = client.get(f"/session/{session_id}/chat-count")
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Session not found"
+
+def test_get_session_chat_count_error(client):
+    """Test getting session chat count when database error occurs"""
+    session_id = "error_session"
+    
+    with patch("app.api.routes.chat.get_session", new=AsyncMock(side_effect=Exception("Database error"))):
+        resp = client.get(f"/session/{session_id}/chat-count")
+        assert resp.status_code == 500
+        assert "Failed to get session chat count" in resp.json()["detail"]
+
+def test_get_session_chat_count_mixed_messages(client):
+    """Test getting session chat count with mixed user and assistant messages"""
+    session_id = "test_session_mixed"
+    user_id = "550e8400-e29b-41d4-a716-446655440000"  # Match the mock user ID
+    
+    # Mock session with mixed message types
+    mock_session = {
+        "session_id": session_id,
+        "user_id": user_id,
+        "chat_history": [
+            {"role": "assistant", "content": "Welcome!", "timestamp": "2024-01-01T00:00:00"},
+            {"role": "user", "content": "Hello", "timestamp": "2024-01-01T00:00:01"},
+            {"role": "assistant", "content": "Hi there!", "timestamp": "2024-01-01T00:00:02"},
+            {"role": "user", "content": "How are you?", "timestamp": "2024-01-01T00:00:03"},
+            {"role": "assistant", "content": "I'm doing well!", "timestamp": "2024-01-01T00:00:04"},
+            {"role": "user", "content": "What's the weather?", "timestamp": "2024-01-01T00:00:05"},
+            {"role": "assistant", "content": "It's sunny!", "timestamp": "2024-01-01T00:00:06"},
+            {"role": "user", "content": "Great!", "timestamp": "2024-01-01T00:00:07"}
+        ]
+    }
+    
+    with patch("app.api.routes.chat.get_session", new=AsyncMock(return_value=mock_session)):
+        resp = client.get(f"/session/{session_id}/chat-count")
+        assert resp.status_code == 200
+        
+        data = resp.json()
+        assert data["session_id"] == session_id
+        assert data["user_id"] == user_id
+        assert data["chat_count"] == 4  # 4 user messages
+        assert data["should_generate_quiz"] is True  # 4 messages >= 3
+        assert data["messages_until_quiz"] == 0  # Already above threshold 

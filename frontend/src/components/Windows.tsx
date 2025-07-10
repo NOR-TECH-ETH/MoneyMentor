@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Skeleton from 'react-loading-skeleton';
 
 interface WindowsProps {
   currentWindow: 'intro' | 'chat' | 'learn';
@@ -18,6 +19,11 @@ interface WindowsProps {
   chatQuizTotalAnswered?: number;
   chatQuizHistory?: any[];
   QuizHistoryDropdown?: React.ComponentType<any>;
+  // Missing props
+  onQuizTrackerClick?: () => void;
+  quizProgressLoading?: boolean;
+  quizHistoryLoading?: boolean;
+  quizHistoryError?: string | null;
 }
 
 export const Windows: React.FC<WindowsProps> = ({
@@ -37,7 +43,12 @@ export const Windows: React.FC<WindowsProps> = ({
   chatQuizCorrectAnswered = 0,
   chatQuizTotalAnswered = 0,
   chatQuizHistory = [],
-  QuizHistoryDropdown
+  QuizHistoryDropdown,
+  // Missing props
+  onQuizTrackerClick,
+  quizProgressLoading = false,
+  quizHistoryLoading = false,
+  quizHistoryError = null
 }) => {
   return (
     <>
@@ -55,7 +66,7 @@ export const Windows: React.FC<WindowsProps> = ({
           <button
             ref={quizTrackerRef}
             className="quiz-progress-simple-btn"
-            onClick={onToggleQuizDropdown}
+            onClick={onQuizTrackerClick}
             title="View quiz history"
             style={{ 
               width: '48px',
@@ -83,15 +94,21 @@ export const Windows: React.FC<WindowsProps> = ({
               e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
             }}
           >
-            <span className="quiz-progress-simple-text" style={{ lineHeight: '1' }}>
-              {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
-            </span>
+            {quizProgressLoading ? (
+              <Skeleton width={32} height={16} baseColor="#a5b4fc" highlightColor="#c7d2fe" style={{ borderRadius: 8 }} />
+            ) : (
+              <span className="quiz-progress-simple-text" style={{ lineHeight: '1' }}>
+                {chatQuizCorrectAnswered}/{chatQuizTotalAnswered}
+              </span>
+            )}
           </button>
           <QuizHistoryDropdown
             open={showQuizDropdown}
             onClose={onCloseQuizDropdown}
             anchorRef={quizTrackerRef}
             quizHistory={chatQuizHistory}
+            loading={quizHistoryLoading}
+            error={quizHistoryError}
           />
         </div>
       )}

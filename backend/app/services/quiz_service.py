@@ -115,11 +115,28 @@ class QuizService:
             
             response = self.llm.invoke([HumanMessage(content=prompt)])
             import json
+            import re
             try:
-                questions = json.loads(response.content)
+                # Clean up the response to handle trailing commas and other JSON issues
+                content = response.content.strip()
+                
+                # Remove trailing commas before closing braces and brackets
+                content = re.sub(r',(\s*[}\]])', r'\1', content)
+                
+                # Try to parse the cleaned JSON
+                questions = json.loads(content)
             except Exception as e:
-                logger.error(f"Failed to parse diagnostic quiz JSON: {e}. Raw LLM output: {response.content}")
-                return []
+                logger.error(f"Failed to parse LLM response as JSON: {e}, response: {response.content}")
+                # Try one more time with more aggressive cleaning
+                try:
+                    # Remove all trailing commas
+                    content = re.sub(r',(\s*[}\]])', r'\1', content)
+                    content = re.sub(r',(\s*})', r'\1', content)
+                    content = re.sub(r',(\s*\])', r'\1', content)
+                    questions = json.loads(content)
+                except Exception as e2:
+                    logger.error(f"Failed to parse LLM response even after cleaning: {e2}")
+                    raise ValueError("LLM did not return valid JSON.")
             
             # Process all questions
             processed_questions = []
@@ -150,18 +167,35 @@ class QuizService:
             )
             response = self.llm.invoke([HumanMessage(content=prompt)])
             import json
+            import re
             try:
-                question_data = json.loads(response.content)
-                if 'question' in question_data and 'choices' in question_data and 'correct_answer' in question_data:
-                    return {
-                        'question': question_data['question'],
-                        'choices': question_data['choices'],
-                        'correct_answer': question_data['correct_answer'],
-                        'explanation': question_data.get('explanation', '')
-                    }
+                # Clean up the response to handle trailing commas and other JSON issues
+                content = response.content.strip()
+                
+                # Remove trailing commas before closing braces and brackets
+                content = re.sub(r',(\s*[}\]])', r'\1', content)
+                
+                # Try to parse the cleaned JSON
+                question_data = json.loads(content)
             except Exception as e:
-                logger.error(f"Failed to parse question JSON for topic {topic}: {e}")
-                return None
+                logger.error(f"Failed to parse question JSON for topic {topic}: {e}, response: {response.content}")
+                # Try one more time with more aggressive cleaning
+                try:
+                    # Remove all trailing commas
+                    content = re.sub(r',(\s*[}\]])', r'\1', content)
+                    content = re.sub(r',(\s*})', r'\1', content)
+                    content = re.sub(r',(\s*\])', r'\1', content)
+                    question_data = json.loads(content)
+                except Exception as e2:
+                    logger.error(f"Failed to parse question JSON even after cleaning: {e2}")
+                    return None
+            if 'question' in question_data and 'choices' in question_data and 'correct_answer' in question_data:
+                return {
+                    'question': question_data['question'],
+                    'choices': question_data['choices'],
+                    'correct_answer': question_data['correct_answer'],
+                    'explanation': question_data.get('explanation', '')
+                }
             return None
         except Exception as e:
             logger.error(f"Failed to generate question for topic {topic}: {e}")

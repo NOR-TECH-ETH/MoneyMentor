@@ -13,8 +13,8 @@ interface SidebarProps {
   setSidebarState: (state: SidebarState) => void;
   chatSessions: ChatSession[];
   userProfile: UserProfile;
-  profileModalState: { isOpen: boolean; activeTab: 'profile' | 'settings' };
-  setProfileModalState: (state: { isOpen: boolean; activeTab: 'profile' | 'settings' }) => void;
+  profileModalState: { isOpen: boolean; activeTab: 'profile' | 'settings' | 'quizzes' };
+  setProfileModalState: (state: { isOpen: boolean; activeTab: 'profile' | 'settings' | 'quizzes' }) => void;
   onSessionSelect: (sessionId: string) => void;
   onNewChat: () => void;
   onProfileUpdate: (profile: Partial<UserProfile>) => void;
@@ -131,12 +131,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Chat Sessions List */}
         <div className="chat-sessions-container">
-          <ChatSessionsList
-            sessions={chatSessions}
-            selectedSessionId={sidebarState.selectedSessionId}
-            onSessionSelect={handleSessionClick}
+        <ChatSessionsList
+          sessions={chatSessions}
+          selectedSessionId={sidebarState.selectedSessionId}
+          onSessionSelect={handleSessionClick}
             onSessionDelete={onSessionDelete}
-            isCollapsed={sidebarState.isCollapsed}
+          isCollapsed={sidebarState.isCollapsed}
             isLoading={isLoadingSessions}
             theme={theme}
           />
@@ -158,11 +158,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Profile Section - Fixed at bottom */}
         <div className="sidebar-profile-section">
-          <ProfileButton
-            userProfile={userProfile}
-            isCollapsed={sidebarState.isCollapsed}
-            onClick={() => setProfileModalState({ isOpen: true, activeTab: 'profile' })}
-          />
+        <ProfileButton
+          userProfile={userProfile}
+          isCollapsed={sidebarState.isCollapsed}
+          onClick={() => setProfileModalState({ isOpen: true, activeTab: 'profile' })}
+        />
         </div>
       </div>
 
@@ -175,6 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onTabSwitch={(tab) => setProfileModalState({ isOpen: true, activeTab: tab })}
         onProfileUpdate={onProfileUpdate}
         theme={theme}
+        apiConfig={apiConfig}
       />
     </>
   );

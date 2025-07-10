@@ -198,7 +198,7 @@ export const sendChatMessageStream = async (
     if (response.status === 422) {
       throw new Error('Invalid request: Please check your input and try again.');
     }
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(errorData.detail || `Failed to send message: ${response.status} ${response.statusText}`);
@@ -653,6 +653,39 @@ export const generateDiagnosticQuiz = async (
   return { questions, quizId: data.quiz_id };
 };
 
+// New: Generate Micro Quiz (POST /api/quiz/generate)
+export const generateMicroQuiz = async (
+  config: ApiConfig
+): Promise<{ questions: QuizQuestion[]; quizId: string }> => {
+  const requestBody = {
+    session_id: config.sessionId,
+    quiz_type: 'micro'
+  };
+
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/quiz/generate`, {
+    method: 'POST',
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to generate micro quiz');
+  }
+
+  const data = await response.json();
+  // Map backend format to local QuizQuestion[]
+  const questions = data.questions.map((q: any) => ({
+    id: '', // Backend does not provide id, can generate if needed
+    question: q.question,
+    options: Object.values(q.choices),
+    correctAnswer: ['a', 'b', 'c', 'd'].indexOf(q.correct_answer.toLowerCase()),
+    explanation: q.explanation,
+    topicTag: q.topic || '',
+    difficulty: 'medium', // Default or map if provided
+  }));
+  return { questions, quizId: data.quiz_id };
+};
+
 // New: Submit Diagnostic Quiz (POST /api/quiz/submit)
 export const submitDiagnosticQuiz = async (
   config: ApiConfig,
@@ -668,10 +701,21 @@ export const submitDiagnosticQuiz = async (
       throw new Error('All questions must be answered before submitting.');
     }
     return {
-    quiz_id: quizId,
+      quiz_id: quizId,
       selected_option: String.fromCharCode(65 + answerIdx), // 'A', 'B', 'C', 'D'
       correct: answerIdx === q.correctAnswer,
-    topic: q.topicTag || '',
+      topic: q.topicTag || '',
+      // Add all quiz details for proper storage
+      explanation: q.explanation || '',
+      correct_answer: String.fromCharCode(65 + q.correctAnswer), // 'A', 'B', 'C', 'D'
+      question_data: {
+        question: q.question,
+        choices: q.options,
+        correct_answer: String.fromCharCode(65 + q.correctAnswer),
+        explanation: q.explanation,
+        topic: q.topicTag,
+        difficulty: q.difficulty || 'medium'
+      }
     };
   });
 
@@ -695,6 +739,52 @@ export const submitDiagnosticQuiz = async (
   const data = await response.json();
   return data.data;
 }; 
+
+// New: Submit Micro Quiz (POST /api/quiz/submit)
+export const submitMicroQuiz = async (
+  config: ApiConfig,
+  quizId: string,
+  question: QuizQuestion,
+  selectedOption: number,
+  correct: boolean,
+  userId: string
+): Promise<any> => {
+  const response = await fetch(`${BACKEND_URL}/api/quiz/submit`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...withAuth()
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      quiz_type: 'micro',
+      session_id: config.sessionId,
+      responses: [
+        {
+          quiz_id: quizId,
+          selected_option: String.fromCharCode(65 + selectedOption), // 'A', 'B', 'C', 'D'
+          correct,
+          topic: question.topicTag || '',
+          // Add all quiz details for proper storage
+          explanation: question.explanation || '',
+          correct_answer: String.fromCharCode(65 + question.correctAnswer), // 'A', 'B', 'C', 'D'
+          question_data: {
+            question: question.question,
+            choices: question.options,
+            correct_answer: String.fromCharCode(65 + question.correctAnswer),
+            explanation: question.explanation,
+            topic: question.topicTag,
+            difficulty: question.difficulty || 'medium'
+          }
+        }
+      ]
+    })
+  });
+  if (!response.ok) {
+    throw new Error('Failed to submit micro quiz');
+  }
+  return response.json();
+};
 
 // User Profile API calls
 export const getUserProfile = async (): Promise<any> => {
@@ -809,5 +899,53 @@ export const deleteSession = async (config: ApiConfig, sessionId: string): Promi
     throw new Error(errorData.detail || 'Failed to delete session');
   }
 
+  return response.json();
+}; 
+
+// Get session quiz progress (x/y correct/total)
+export const getSessionQuizProgress = async (config: ApiConfig, sessionId: string): Promise<{ correct_answers: number; total_quizzes: number; score_percentage: number }> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/quiz/progress/session/${sessionId}`, {
+    method: 'GET'
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to fetch session quiz progress');
+  }
+  return response.json();
+};
+
+// Get session quiz history (list of quizzes for this session)
+export const getSessionQuizHistory = async (config: ApiConfig, sessionId: string): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/quiz/history/session/${sessionId}`, {
+    method: 'GET'
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to fetch session quiz history');
+  }
+  return response.json();
+};
+
+// Get all quiz history for the user
+export const getAllQuizHistory = async (config: ApiConfig): Promise<any> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/quiz/history`, {
+    method: 'GET'
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to fetch quiz history');
+  }
+  return response.json();
+};
+
+// Get session chat count (number of user messages, should_generate_quiz)
+export const getSessionChatCount = async (config: ApiConfig, sessionId: string): Promise<{ chat_count: number; should_generate_quiz: boolean; messages_until_quiz: number }> => {
+  const response = await makeAuthenticatedRequest(`${BACKEND_URL}/api/chat/session/${sessionId}/chat-count`, {
+    method: 'GET'
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to fetch session chat count');
+  }
   return response.json();
 }; 

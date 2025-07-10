@@ -146,6 +146,28 @@ async def submit_quiz(
     try:
         supabase = get_supabase()
         
+        # Ensure session exists in database before submitting quiz
+        if quiz_batch.session_id:
+            try:
+                # Check if session exists in database
+                session_result = supabase.table("user_sessions").select("session_id").eq("session_id", quiz_batch.session_id).execute()
+                if not session_result.data or len(session_result.data) == 0:
+                    # Session doesn't exist, create it
+                    logger.info(f"Session {quiz_batch.session_id} not found, creating new session")
+                    session_data = {
+                        "session_id": quiz_batch.session_id,
+                        "user_id": current_user["id"],
+                        "chat_history": [],
+                        "progress": {},
+                        "created_at": datetime.utcnow().isoformat(),
+                        "updated_at": datetime.utcnow().isoformat()
+                    }
+                    supabase.table("user_sessions").insert(session_data).execute()
+                    logger.info(f"Created session {quiz_batch.session_id} for quiz submission")
+            except Exception as session_error:
+                logger.error(f"Failed to ensure session exists: {session_error}")
+                # Continue with quiz submission even if session creation fails
+        
         # 1. Prepare batch data for quiz_responses table
         quiz_responses_batch = []
         topic_stats = {}  # Track stats for user_progress update
@@ -158,7 +180,12 @@ async def submit_quiz(
                 "selected": response["selected_option"],
                 "correct": response["correct"],
                 "quiz_type": quiz_batch.quiz_type,
-                "score": 100.0 if response["correct"] else 0.0
+                "score": 100.0 if response["correct"] else 0.0,
+                # Add all quiz details for proper storage
+                "explanation": response.get("explanation", ""),
+                "correct_answer": response.get("correct_answer", ""),
+                "question_data": response.get("question_data", {}),
+                "session_id": quiz_batch.session_id
             }
             quiz_responses_batch.append(quiz_response_data)
             
@@ -565,8 +592,9 @@ async def get_session_quiz_history(
     try:
         supabase = get_supabase()
         
-        # Get micro quiz history for the specific session
-        result = supabase.table('quiz_responses').select('*').eq('session_id', session_id).eq('user_id', current_user["id"]).eq('quiz_type', 'micro').order('created_at', desc=True).execute()
+        # Get micro quiz history for the specific session by filtering quiz_id pattern
+        # Quiz IDs are generated as: quiz_{session_id}_{timestamp}
+        result = supabase.table('quiz_responses').select('*').like('quiz_id', f'quiz_{session_id}_%').eq('user_id', current_user["id"]).eq('quiz_type', 'micro').order('created_at', desc=True).execute()
         
         return {
             "session_id": session_id,
@@ -579,6 +607,35 @@ async def get_session_quiz_history(
     except Exception as e:
         logger.error(f"Session micro quiz history retrieval failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to get session micro quiz history")
+
+@router.get("/progress/session/{session_id}")
+async def get_session_quiz_progress(
+    session_id: str,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """Get session-specific quiz progress for the quiz tracker button"""
+    try:
+        supabase = get_supabase()
+        
+        # Get micro quiz history for the specific session by filtering quiz_id pattern
+        # Quiz IDs are generated as: quiz_{session_id}_{timestamp}
+        result = supabase.table('quiz_responses').select('*').like('quiz_id', f'quiz_{session_id}_%').eq('user_id', current_user["id"]).eq('quiz_type', 'micro').execute()
+        
+        quiz_responses = result.data if result.data else []
+        total_quizzes = len(quiz_responses)
+        correct_answers = sum(1 for quiz in quiz_responses if quiz.get('correct', False))
+        
+        return {
+            "session_id": session_id,
+            "user_id": current_user["id"],
+            "correct_answers": correct_answers,
+            "total_quizzes": total_quizzes,
+            "score_percentage": round((correct_answers / total_quizzes * 100) if total_quizzes > 0 else 0, 2)
+        }
+        
+    except Exception as e:
+        logger.error(f"Session quiz progress retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get session quiz progress")
 
 @router.get("/history/course/{course_id}")
 async def get_course_quiz_history(

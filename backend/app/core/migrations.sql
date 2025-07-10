@@ -174,3 +174,47 @@ CREATE TRIGGER update_user_activity_quiz_trigger
     AFTER INSERT ON quiz_responses
     FOR EACH ROW
     EXECUTE FUNCTION trigger_update_user_activity(); 
+
+-- Migration to add missing columns to quiz_responses table
+-- Add explanation, correct_answer, question_data, session_id, course_id, page_index columns
+
+-- Add explanation column
+ALTER TABLE public.quiz_responses 
+ADD COLUMN IF NOT EXISTS explanation text null;
+
+-- Add correct_answer column  
+ALTER TABLE public.quiz_responses 
+ADD COLUMN IF NOT EXISTS correct_answer text null;
+
+-- Add question_data column
+ALTER TABLE public.quiz_responses 
+ADD COLUMN IF NOT EXISTS question_data jsonb null;
+
+-- Add session_id column
+ALTER TABLE public.quiz_responses 
+ADD COLUMN IF NOT EXISTS session_id text null;
+
+-- Add course_id column
+ALTER TABLE public.quiz_responses 
+ADD COLUMN IF NOT EXISTS course_id uuid null;
+
+-- Add page_index column
+ALTER TABLE public.quiz_responses 
+ADD COLUMN IF NOT EXISTS page_index integer null; 
+
+-- Migration to fix the foreign key constraint issue
+-- The current constraint references the wrong column (id instead of session_id)
+
+-- First, drop the incorrect foreign key constraint if it exists
+ALTER TABLE public.quiz_responses 
+DROP CONSTRAINT IF EXISTS quiz_responses_session_id_fkey;
+
+-- Option 1: Remove the foreign key constraint entirely (allow NULL session_id)
+-- This allows quiz responses to exist without requiring a session
+
+-- Option 2: Add a correct foreign key constraint (uncomment if you want to enforce the relationship)
+-- ALTER TABLE public.quiz_responses 
+-- ADD CONSTRAINT quiz_responses_session_id_fkey 
+-- FOREIGN KEY (session_id) REFERENCES user_sessions(session_id);
+
+-- For now, we'll go with Option 1 (no foreign key constraint) to allow flexibility 

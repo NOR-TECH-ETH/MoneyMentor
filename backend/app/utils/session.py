@@ -94,47 +94,38 @@ async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
     """Get session by ID with caching"""
     try:
         session_id_str = str(session_id)
-        
         # Check cache first
         async with _cache_lock:
             if session_id_str in _session_cache:
                 return _session_cache[session_id_str]
-        
         # If not in cache, get from database using session_id column first, then id column as fallback
         result = supabase.table("user_sessions").select("*").eq("session_id", session_id_str).execute()
-        
+        logger.debug(f"Supabase query by session_id={session_id_str} result: {result.data}")
         if not result.data or len(result.data) == 0:
             # Fallback to searching by id column (for backward compatibility)
-            # BUT only if the session_id looks like a UUID (to avoid false matches)
             import re
             uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
-            
             if uuid_pattern.match(session_id_str):
                 result = supabase.table("user_sessions").select("*").eq("id", session_id_str).execute()
+                logger.debug(f"Supabase query by id={session_id_str} result: {result.data}")
                 if result.data and len(result.data) > 0:
                     logger.info(f"Found session using id column fallback for UUID session_id: {session_id_str}")
             else:
                 logger.debug(f"Session not found and session_id '{session_id_str}' is not a UUID, skipping id column fallback")
-        
         if result.data and len(result.data) > 0:
-            # Convert database format to expected session format
             db_data = result.data[0]
             session_data = {
-                "session_id": db_data.get("session_id") or str(db_data["id"]),  # Use session_id if available, otherwise database id
+                "session_id": db_data.get("session_id") or str(db_data["id"]),
                 "user_id": db_data.get("user_id"),
                 "chat_history": db_data.get("chat_history", []),
                 "progress": db_data.get("progress", {}),
                 "created_at": db_data.get("created_at"),
                 "updated_at": db_data.get("updated_at")
             }
-            
-            # Store in cache
             async with _cache_lock:
                 _session_cache[session_id_str] = session_data
             return session_data
-        
         return None
-        
     except Exception as e:
         logger.error(f"Failed to get session: {e}")
         return None

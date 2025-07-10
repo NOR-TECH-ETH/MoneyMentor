@@ -143,6 +143,13 @@ create table public.quiz_responses (
   quiz_type text null default 'micro'::text,
   score numeric null,
   created_at timestamp with time zone null default now(),
+  -- Add missing fields for quiz details
+  explanation text null,
+  correct_answer text null,
+  question_data jsonb null,
+  session_id text null,
+  course_id uuid null,
+  page_index integer null,
   constraint quiz_responses_pkey primary key (id)
 ) TABLESPACE pg_default;
 
