@@ -106,6 +106,7 @@ export const clearSession = (): void => {
   Cookies.remove('refresh_token');
   localStorage.removeItem('auth_token_expires');
   localStorage.removeItem('moneymentor_user_id');
+  localStorage.removeItem('moneymentor_user_name');
 };
 
 /**
@@ -123,5 +124,15 @@ export const storeAuthData = (authData: any): void => {
     // Store expiration time - 60 minutes
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 minutes
     localStorage.setItem('auth_token_expires', expiresAt.toISOString());
+
+    // Store user name for profile persistence
+    if (authData.user.first_name || authData.user.last_name) {
+      const fullName = `${authData.user.first_name || ''} ${authData.user.last_name || ''}`.trim();
+      localStorage.setItem('moneymentor_user_name', fullName);
+    }
   }
+};
+
+export const getStoredUserName = (): string | null => {
+  return localStorage.getItem('moneymentor_user_name');
 }; 

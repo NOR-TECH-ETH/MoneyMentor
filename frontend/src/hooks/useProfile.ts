@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ProfileModalState, UserProfile } from '../types';
 import { getDefaultUserProfile } from '../utils/profile';
+import { getStoredUserName } from '../utils/sessionUtils';
 
 export const useProfile = () => {
   const [profileModalState, setProfileModalState] = useState<ProfileModalState>({
@@ -9,6 +10,17 @@ export const useProfile = () => {
   });
 
   const [userProfile, setUserProfile] = useState<UserProfile>(getDefaultUserProfile());
+
+  // Initialize profile with stored name from localStorage
+  useEffect(() => {
+    const storedName = getStoredUserName();
+    if (storedName) {
+      setUserProfile(prev => ({
+        ...prev,
+        name: storedName,
+      }));
+    }
+  }, []);
 
   const openProfileModal = useCallback((tab: 'profile' | 'settings' = 'profile') => {
     setProfileModalState({
@@ -47,8 +59,6 @@ export const useProfile = () => {
       },
     }));
   }, []);
-
-
 
   return {
     profileModalState,

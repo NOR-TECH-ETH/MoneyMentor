@@ -186,14 +186,15 @@ export const logout = async () => {
     console.error('Logout error:', error);
   } finally {
     // Clear all auth data
-  Cookies.remove('auth_token');
+    Cookies.remove('auth_token');
     Cookies.remove('refresh_token');
-  localStorage.removeItem('auth_token_expires');
+    localStorage.removeItem('auth_token_expires');
     localStorage.removeItem('moneymentor_user_id');
+    localStorage.removeItem('moneymentor_user_name');
     localStorage.removeItem('moneymentor_session_id');
     
     // Reset the flag and reload
     logoutInProgress = false;
-  window.location.reload();
+    window.location.reload();
   }
 };

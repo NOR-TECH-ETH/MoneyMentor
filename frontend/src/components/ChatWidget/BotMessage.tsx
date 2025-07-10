@@ -166,12 +166,12 @@ const BotMessage: React.FC<BotMessageProps> = ({
               <button className="bot-action-btn" title="Copy" onClick={handleCopy}>
                 <ContentCopyOutlinedIcon style={{ fontSize: 22 }} />
               </button>
-              <button className="bot-action-btn" title="Like" disabled>
+              {/* <button className="bot-action-btn" title="Like" disabled>
                 <ThumbUpOutlinedIcon style={{ fontSize: 22 }} />
               </button>
               <button className="bot-action-btn" title="Dislike" disabled>
                 <ThumbDownOutlinedIcon style={{ fontSize: 22 }} />
-              </button>
+              </button> */}
             </div>
           )}
           

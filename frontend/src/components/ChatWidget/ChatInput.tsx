@@ -53,14 +53,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div className="chat-input">
-      <button 
+      {/* <button 
         className="upload-btn"
         onClick={handleTriggerFileUpload}
         title="Upload file (PDF, TXT, PPT, PPTX)"
         disabled={uploadProgress.isUploading || disabled}
       >
         <Upload size={18} />
-      </button>
+      </button> */}
       
       <div className="input-container">
         <input
