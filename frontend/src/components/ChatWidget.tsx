@@ -29,7 +29,8 @@ import {
   CalculationResult,
   MessageButtons,
   QuizHistoryDropdown,
-  BotMessage
+  BotMessage,
+  ShimmerLoading
 } from './ChatWidget/index';
 
 // Import Windows component
@@ -172,7 +173,11 @@ class WindowInstance {
     private setCourseQuizAnswers: (answers: CourseQuizAnswers) => void,
     private setUploadedFiles: (files: File[]) => void,
     private setUploadProgress: (progress: UploadProgress) => void,
-    private removeIntroMessage: (pattern: string) => void
+    private removeIntroMessage: (pattern: string) => void,
+    private setDiagnosticGenerating?: (loading: boolean) => void,
+    private setCourseGenerating?: (loading: boolean) => void,
+    private setCourseCompleting?: (loading: boolean) => void,
+    private setQuizSubmitting?: (loading: boolean) => void
   ) {}
   
   // Initialize welcome message
@@ -230,6 +235,7 @@ class WindowInstance {
       sessionIds: this.sessionIds,
       addMessage: this.addMessage,
       setIsLoading: this.setIsLoading,
+      setDiagnosticGenerating: this.setDiagnosticGenerating,
       closeCurrentDisplays: this.closeCurrentDisplays.bind(this),
       setDiagnosticState: this.setDiagnosticState,
       setIsDiagnosticMode: this.setIsDiagnosticMode,
@@ -247,6 +253,8 @@ class WindowInstance {
       sessionIds: this.sessionIds,
       addMessage: this.addMessage,
       setIsLoading: this.setIsLoading,
+      setCourseGenerating: this.setCourseGenerating,
+      setCourseCompleting: this.setCourseCompleting,
       closeCurrentDisplays: this.closeCurrentDisplays.bind(this),
       setAvailableCourses: this.setAvailableCourses,
       setShowCourseList: this.setShowCourseList,
@@ -264,7 +272,8 @@ class WindowInstance {
       apiConfig: this.apiConfig,
       setLastQuizAnswer: this.setLastQuizAnswer,
       setShowQuizFeedback: this.setShowQuizFeedback,
-      setCurrentQuiz: this.setCurrentQuiz
+      setCurrentQuiz: this.setCurrentQuiz,
+      setQuizSubmitting: this.setQuizSubmitting
     };
   }
   
@@ -499,6 +508,18 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>(initializeUploadProgress());
   const messagesEndRef = useScrollToBottom([chatMessages, learnMessages, currentWindow]);
   
+  // Loading states for specific API calls
+  const [chatQuizGenerating, setChatQuizGenerating] = useState(false);
+  const [learnQuizGenerating, setLearnQuizGenerating] = useState(false);
+  const [chatQuizSubmitting, setChatQuizSubmitting] = useState(false);
+  const [learnQuizSubmitting, setLearnQuizSubmitting] = useState(false);
+  const [chatCourseGenerating, setChatCourseGenerating] = useState(false);
+  const [learnCourseGenerating, setLearnCourseGenerating] = useState(false);
+  const [chatCourseCompleting, setChatCourseCompleting] = useState(false);
+  const [learnCourseCompleting, setLearnCourseCompleting] = useState(false);
+  const [chatDiagnosticGenerating, setChatDiagnosticGenerating] = useState(false);
+  const [learnDiagnosticGenerating, setLearnDiagnosticGenerating] = useState(false);
+
   // Get user ID from backend (stored during login)
   const userId = localStorage.getItem('moneymentor_user_id');
   
@@ -713,7 +734,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setChatCourseQuizAnswers,
     setUploadedFiles,
     setUploadProgress,
-    (pattern) => setChatMessages(prev => prev.filter(msg => !msg.content.includes(pattern)))
+    (pattern) => setChatMessages(prev => prev.filter(msg => !msg.content.includes(pattern))),
+    setChatQuizGenerating,
+    setChatCourseGenerating,
+    setChatCourseCompleting,
+    setChatQuizSubmitting
   );
 
   const learnWindow = new WindowInstance(
@@ -738,7 +763,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
     setLearnCourseQuizAnswers,
     () => {}, // No file upload for learn window
     () => {}, // No upload progress for learn window
-    (pattern) => setLearnMessages(prev => prev.filter(msg => !msg.content.includes(pattern)))
+    (pattern) => setLearnMessages(prev => prev.filter(msg => !msg.content.includes(pattern))),
+    setLearnDiagnosticGenerating,
+    setLearnCourseGenerating,
+    setLearnCourseCompleting,
+    setLearnQuizSubmitting
   );
 
   // Initialize session when widget opens
@@ -1328,6 +1357,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
       setChatMessageCount(countData.chat_count);
       if (countData.should_generate_quiz && !chatCurrentQuiz && !chatIsDiagnosticMode) {
         // Show shimmer while generating quiz
+        setChatQuizGenerating(true);
         setChatCurrentQuiz(null);
         setChatShowQuizFeedback(false);
         
@@ -1343,6 +1373,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         } catch (err: any) {
           console.error('Failed to generate quiz:', err);
           setChatCountError('Failed to generate quiz');
+        } finally {
+          setChatQuizGenerating(false);
         }
       }
     } catch (err: any) {
@@ -1547,6 +1579,23 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
             </div>
           ))}
+          
+          {/* Shimmer Loading Components */}
+          {chatQuizGenerating && (
+            <ShimmerLoading type="quiz" theme={currentTheme} />
+          )}
+          {chatDiagnosticGenerating && (
+            <ShimmerLoading type="diagnostic" theme={currentTheme} />
+          )}
+          {chatCourseGenerating && (
+            <ShimmerLoading type="course" theme={currentTheme} />
+          )}
+          {chatCourseCompleting && (
+            <ShimmerLoading type="course" theme={currentTheme} />
+          )}
+          {chatQuizSubmitting && (
+            <ShimmerLoading type="quiz" theme={currentTheme} />
+          )}
           {/* Diagnostic Test Component */}
           <DiagnosticTest
                   isDiagnosticMode={chatIsDiagnosticMode}
@@ -1635,6 +1684,23 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
                   </div>
                 ))}
+                
+                {/* Shimmer Loading Components for Learn Window */}
+                {learnQuizGenerating && (
+                  <ShimmerLoading type="quiz" theme={currentTheme} />
+                )}
+                {learnDiagnosticGenerating && (
+                  <ShimmerLoading type="diagnostic" theme={currentTheme} />
+                )}
+                {learnCourseGenerating && (
+                  <ShimmerLoading type="course" theme={currentTheme} />
+                )}
+                {learnCourseCompleting && (
+                  <ShimmerLoading type="course" theme={currentTheme} />
+                )}
+                {learnQuizSubmitting && (
+                  <ShimmerLoading type="quiz" theme={currentTheme} />
+                )}
                 {/* Learn Diagnostic Test Component */}
                 <DiagnosticTest
                   isDiagnosticMode={learnIsDiagnosticMode}

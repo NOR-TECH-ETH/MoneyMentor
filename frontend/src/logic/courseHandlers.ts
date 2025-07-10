@@ -24,6 +24,8 @@ export interface CourseHandlersProps {
   sessionIds: { userId: string; sessionId: string };
   addMessage: (message: any) => void;
   setIsLoading: (loading: boolean) => void;
+  setCourseGenerating?: (loading: boolean) => void;
+  setCourseCompleting?: (loading: boolean) => void;
   closeCurrentDisplays: () => void;
   setAvailableCourses: (courses: Course[]) => void;
   setShowCourseList: (show: boolean) => void;
@@ -113,6 +115,7 @@ export const handleStartCourse = async (
     sessionIds,
     addMessage,
     setIsLoading,
+    setCourseGenerating,
     closeCurrentDisplays,
     setCurrentCoursePage,
     setCurrentCourse,
@@ -123,6 +126,11 @@ export const handleStartCourse = async (
   try {
     setIsLoading(true);
     closeCurrentDisplays();
+    
+    // Show shimmer loading for course generation
+    if (setCourseGenerating) {
+      setCourseGenerating(true);
+    }
     
     // Start the course with retry mechanism
     let result;
@@ -210,40 +218,30 @@ export const handleStartCourse = async (
               quizData: pageData.quiz_data
             };
             setCurrentCoursePage(page);
+            
             // Course start message removed per user request
           }
-        } else {
-          console.error('No current_page data in result:', result); // Debug log
         }
       } else {
-        console.error('Failed to get course details:', courseDetails); // Debug log
+        throw new Error(courseDetails.message || 'Failed to get course details');
       }
     } else {
       throw new Error(result.message || 'Failed to start course');
     }
     
   } catch (error) {
-    let errorMsg = 'Sorry, there was an error starting the course. Please try again.';
-    
-    // Check for specific error messages
-    if (error instanceof Error) {
-      if (error.message.includes('Course not found')) {
-        errorMsg = 'The requested course could not be found. It may still be being prepared. Please try again in a moment.';
-      } else if (error.message.includes('Course pages not found')) {
-        errorMsg = 'The course content is still being prepared. Please try again in a moment.';
-      } else if (error.message.includes('properly registered')) {
-        errorMsg = 'The course is still being set up. Please wait a moment and try again.';
-      }
-    }
-    
+    console.error('Error starting course:', error);
     const errorMessage = createSystemMessage(
-      errorMsg,
+      'Failed to start course. Please try again later.',
       sessionIds.sessionId,
       sessionIds.userId
     );
     addMessage(errorMessage);
   } finally {
     setIsLoading(false);
+    if (setCourseGenerating) {
+      setCourseGenerating(false);
+    }
   }
 };
 
@@ -303,6 +301,7 @@ export const handleNavigateCoursePage = async (
             quizData: pageData.quiz_data
           };
           setCurrentCoursePage(page);
+          
           // Course start message removed per user request
         }
       }
@@ -439,11 +438,17 @@ export const handleCompleteCourse = async (
     sessionIds,
     addMessage,
     setIsLoading,
+    setCourseCompleting,
     closeCurrentDisplays
   } = props;
 
   try {
     setIsLoading(true);
+    
+    // Show shimmer loading for course completion
+    if (setCourseCompleting) {
+      setCourseCompleting(true);
+    }
     
     // Complete the course
     const result = await completeCourse(apiConfig, courseId);
@@ -477,5 +482,8 @@ ${result.data.completion_summary ?
     addMessage(errorMessage);
   } finally {
     setIsLoading(false);
+    if (setCourseCompleting) {
+      setCourseCompleting(false);
+    }
   }
 }; 

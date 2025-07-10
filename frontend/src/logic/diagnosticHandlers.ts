@@ -21,6 +21,7 @@ export interface DiagnosticHandlersProps {
   sessionIds: { userId: string; sessionId: string };
   addMessage: (message: ChatMessage) => void;
   setIsLoading: (loading: boolean) => void;
+  setDiagnosticGenerating?: (loading: boolean) => void;
   closeCurrentDisplays: () => void;
   setDiagnosticState: (state: DiagnosticState) => void;
   setIsDiagnosticMode: (mode: boolean) => void;
@@ -36,6 +37,7 @@ export const handleStartDiagnosticTest = async (props: DiagnosticHandlersProps, 
     sessionIds,
     addMessage,
     setIsLoading,
+    setDiagnosticGenerating,
     closeCurrentDisplays,
     setDiagnosticState,
     setIsDiagnosticMode,
@@ -55,6 +57,11 @@ export const handleStartDiagnosticTest = async (props: DiagnosticHandlersProps, 
       sessionIds.userId
     );
     addMessage(introMessage);
+    
+    // Show shimmer loading for diagnostic generation
+    if (setDiagnosticGenerating) {
+      setDiagnosticGenerating(true);
+    }
     
     // Fetch diagnostic quiz from backend with topic if provided
     const { test, quizId } = await fetchDiagnosticQuiz(apiConfig, courseKey);
@@ -76,6 +83,9 @@ export const handleStartDiagnosticTest = async (props: DiagnosticHandlersProps, 
     addMessage(errorMessage);
   } finally {
     setIsLoading(false);
+    if (setDiagnosticGenerating) {
+      setDiagnosticGenerating(false);
+    }
   }
 };
 

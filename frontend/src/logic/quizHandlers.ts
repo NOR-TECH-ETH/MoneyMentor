@@ -10,6 +10,7 @@ export interface QuizHandlersProps {
   setLastQuizAnswer: (feedback: any) => void;
   setShowQuizFeedback: (show: boolean) => void;
   setCurrentQuiz: (quiz: QuizQuestion | null) => void;
+  setQuizSubmitting?: (loading: boolean) => void;
 }
 
 export const handleQuizAnswer = async (
@@ -22,12 +23,18 @@ export const handleQuizAnswer = async (
     apiConfig,
     setLastQuizAnswer,
     setShowQuizFeedback,
-    setCurrentQuiz
+    setCurrentQuiz,
+    setQuizSubmitting
   } = props;
 
   if (!currentQuiz) return;
 
   try {
+    // Show shimmer loading for quiz submission
+    if (setQuizSubmitting) {
+      setQuizSubmitting(true);
+    }
+    
     await logQuizAnswer(
       apiConfig,
       currentQuiz.id,
@@ -48,5 +55,9 @@ export const handleQuizAnswer = async (
     }, 3000);
   } catch (error) {
     console.error('Quiz logging error:', error);
+  } finally {
+    if (setQuizSubmitting) {
+      setQuizSubmitting(false);
+    }
   }
 }; 

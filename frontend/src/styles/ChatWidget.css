@@ -338,6 +338,71 @@
   color: #f9fafb;
 }
 
+/* Shimmer Loading Styles */
+.shimmer-line {
+  border-radius: 4px;
+  margin-bottom: 8px;
+  animation: shimmer 2s infinite linear;
+}
+
+.shimmer-message-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shimmer-quiz {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 8px 0;
+}
+
+.chat-widget.dark .shimmer-quiz {
+  background: #374151;
+  border-color: #4b5563;
+}
+
+.shimmer-option {
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.chat-widget.dark .shimmer-option {
+  background: #4b5563;
+  border-color: #6b7280;
+}
+
+.shimmer-course {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 8px 0;
+}
+
+.chat-widget.dark .shimmer-course {
+  background: #374151;
+  border-color: #4b5563;
+}
+
+.shimmer-diagnostic {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 8px 0;
+}
+
+.chat-widget.dark .shimmer-diagnostic {
+  background: #374151;
+  border-color: #4b5563;
+}
+
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
