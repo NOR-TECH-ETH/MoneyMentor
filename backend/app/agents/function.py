@@ -224,8 +224,36 @@ class MoneyMentorFunction:
             print("=" * 80)
 
             # Detect calculation intent
-            calc_patterns = [r"\$\d+", r"\d+%", r"\d+ months? to pay"]
-            is_calc = any(re.search(p, message.lower()) for p in calc_patterns)
+            calc_patterns = [
+                r"how\s+much\s+(?:do\s+I\s+need\s+to\s+)?(?:pay|save|contribute)",  # "how much do I need to pay"
+                r"how\s+long\s+(?:will\s+it\s+take\s+to\s+)?(?:pay\s+off|clear|reach)",  # "how long will it take to pay off"
+                r"(?:pay\s+off|clear)\s+\$\d+",  # "pay off $6000"
+                r"\d+\s*(?:months?|years?)\s+(?:to\s+)?(?:pay\s+off|clear|reach)",  # "12 months to pay off"
+                r"monthly\s+payment\s+(?:of\s+)?\$\d+",  # "monthly payment of $500"
+                r"\$\d+\s+(?:per\s+)?month",  # "$500 per month"
+                r"calculate\s+(?:my|the)",  # "calculate my payment"
+                r"what\s+(?:would\s+be\s+)?(?:my|the)\s+(?:monthly\s+)?payment",  # "what would be my payment"
+            ]
+            
+            # Exclude educational questions that mention money but don't need calculations
+            educational_patterns = [
+                r"what\s+are\s+(?:some\s+)?ways?\s+to",  # "what are some ways to pay"
+                r"how\s+can\s+I",  # "how can I pay"
+                r"what\s+options?\s+(?:do\s+I\s+have|are\s+available)",  # "what options do I have"
+                r"explain\s+(?:how\s+)?(?:to|about)",  # "explain how to pay"
+                r"tell\s+me\s+about",  # "tell me about paying"
+                r"what\s+is\s+",  # "what is a loan"
+                r"how\s+does\s+",  # "how does APR work"
+            ]
+            
+            # Check if it's a calculation request
+            is_calc_request = any(re.search(p, message.lower()) for p in calc_patterns)
+            
+            # Check if it's an educational question (even if it mentions money)
+            is_educational = any(re.search(p, message.lower()) for p in educational_patterns)
+            
+            # Only treat as calculation if it's explicitly a calculation request AND not an educational question
+            is_calc = is_calc_request and not is_educational
 
             # Build messages for OpenAI
             messages = [
@@ -390,9 +418,38 @@ class MoneyMentorFunction:
                 raise HTTPException(status_code=500, detail="Failed to create session")
             history = session.get("chat_history", [])
 
-        # Detect calculation intent
-        calc_patterns = [r"\$\d+", r"\d+%", r"\d+ months? to pay"]
-        is_calc = any(re.search(p, query.lower()) for p in calc_patterns)
+        # Detect calculation intent with more precise patterns
+        # Look for specific calculation request patterns, not just dollar amounts
+        calc_patterns = [
+            r"how\s+much\s+(?:do\s+I\s+need\s+to\s+)?(?:pay|save|contribute)",  # "how much do I need to pay"
+            r"how\s+long\s+(?:will\s+it\s+take\s+to\s+)?(?:pay\s+off|clear|reach)",  # "how long will it take to pay off"
+            r"(?:pay\s+off|clear)\s+\$\d+",  # "pay off $6000"
+            r"\d+\s*(?:months?|years?)\s+(?:to\s+)?(?:pay\s+off|clear|reach)",  # "12 months to pay off"
+            r"monthly\s+payment\s+(?:of\s+)?\$\d+",  # "monthly payment of $500"
+            r"\$\d+\s+(?:per\s+)?month",  # "$500 per month"
+            r"calculate\s+(?:my|the)",  # "calculate my payment"
+            r"what\s+(?:would\s+be\s+)?(?:my|the)\s+(?:monthly\s+)?payment",  # "what would be my payment"
+        ]
+        
+        # Exclude educational questions that mention money but don't need calculations
+        educational_patterns = [
+            r"what\s+are\s+(?:some\s+)?ways?\s+to",  # "what are some ways to pay"
+            r"how\s+can\s+I",  # "how can I pay"
+            r"what\s+options?\s+(?:do\s+I\s+have|are\s+available)",  # "what options do I have"
+            r"explain\s+(?:how\s+)?(?:to|about)",  # "explain how to pay"
+            r"tell\s+me\s+about",  # "tell me about paying"
+            r"what\s+is\s+",  # "what is a loan"
+            r"how\s+does\s+",  # "how does APR work"
+        ]
+        
+        # Check if it's a calculation request
+        is_calc_request = any(re.search(p, query.lower()) for p in calc_patterns)
+        
+        # Check if it's an educational question (even if it mentions money)
+        is_educational = any(re.search(p, query.lower()) for p in educational_patterns)
+        
+        # Only treat as calculation if it's explicitly a calculation request AND not an educational question
+        is_calc = is_calc_request and not is_educational
 
         # Optional content retrieval
         content_items = await self.content_service.search_content(query, limit=2, threshold=0.2)

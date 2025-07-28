@@ -1456,8 +1456,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
 
   return (
     <div className={`chat-app ${currentTheme}`}>
-      {/* Sidebar - only show in chat window */}
-      {currentWindow === 'chat' && (
+      {/* Sidebar - show in both chat and learn windows */}
+      {(currentWindow === 'chat' || currentWindow === 'learn') && (
         <Sidebar
           sidebarState={sidebarHook.sidebarState}
           setSidebarState={sidebarHook.setSidebarState}
@@ -1465,8 +1465,22 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
           userProfile={profileHook.userProfile}
           profileModalState={profileHook.profileModalState}
           setProfileModalState={profileHook.setProfileModalState}
-          onSessionSelect={handleSessionSelect}
-          onNewChat={handleNewChat}
+          onSessionSelect={(sessionId) => {
+            if (currentWindow === 'learn') {
+              setCurrentWindow('chat');
+              setTimeout(() => handleSessionSelect(sessionId), 0);
+            } else {
+              handleSessionSelect(sessionId);
+            }
+          }}
+          onNewChat={() => {
+            if (currentWindow === 'learn') {
+              setCurrentWindow('chat');
+              setTimeout(() => handleNewChat(), 0);
+            } else {
+              handleNewChat();
+            }
+          }}
           onSessionDelete={handleSessionDelete}
           onProfileUpdate={profileHook.updateProfile}
           theme={currentTheme}
@@ -1488,8 +1502,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({
         
         <div className="chat-header">
           <div className="header-left">
-            {/* SidebarToggle - only show in chat window */}
-            {currentWindow === 'chat' ? (
+            {/* SidebarToggle - show in both chat and learn windows */}
+            {(currentWindow === 'chat' || currentWindow === 'learn') ? (
               <SidebarToggle 
                 isOpen={sidebarHook.sidebarState.isOpen}
                 onClick={sidebarHook.toggleSidebar}

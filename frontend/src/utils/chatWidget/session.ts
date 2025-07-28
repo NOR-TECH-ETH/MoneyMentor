@@ -2,8 +2,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { STORAGE_KEYS } from '../../types';
 import Cookies from 'js-cookie';
 
-// Get environment variables
-
 
 // Helper to get token from cookies
 const getAuthToken = () => Cookies.get('auth_token');

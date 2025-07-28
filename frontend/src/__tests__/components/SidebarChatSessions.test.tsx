@@ -847,3 +847,100 @@ describe('Sidebar Chat Sessions', () => {
     expect(newChatBtn).toBeInTheDocument();
   });
 }); 
+
+describe('Sidebar integration with ChatWidget windows', () => {
+  function SidebarWithWindow({ initialWindow = 'chat', onSessionSelect }) {
+    const [currentWindow, setCurrentWindow] = React.useState(initialWindow);
+    const [selectedSession, setSelectedSession] = React.useState(null);
+    const [pendingNewChat, setPendingNewChat] = React.useState(false);
+
+    React.useEffect(() => {
+      if (pendingNewChat && currentWindow === 'chat') {
+        setSelectedSession(null);
+        setPendingNewChat(false);
+      }
+    }, [currentWindow, pendingNewChat]);
+
+    return (
+      <>
+        {(currentWindow === 'chat' || currentWindow === 'learn') && (
+          <Sidebar
+            sidebarState={{ ...defaultSidebarState, selectedSessionId: selectedSession }}
+            setSidebarState={() => {}}
+            chatSessions={[
+              { id: 'sess1', title: 'Budgeting', preview: 'Help me budget', timestamp: '2024-01-01T10:00:00Z', messageCount: 3, lastActivity: '2024-01-01T10:00:00Z', tags: [] },
+              { id: 'sess2', title: 'Investing', preview: 'How to invest?', timestamp: '2024-01-02T10:00:00Z', messageCount: 5, lastActivity: '2024-01-02T10:00:00Z', tags: [] }
+            ]}
+            userProfile={mockUserProfile}
+            profileModalState={{ isOpen: false, activeTab: 'profile' }}
+            setProfileModalState={() => {}}
+            onSessionSelect={(id) => {
+              if (currentWindow === 'learn') {
+                setCurrentWindow('chat');
+                setTimeout(() => {
+                  setSelectedSession(id);
+                  onSessionSelect && onSessionSelect(id);
+                }, 0);
+              } else {
+                setSelectedSession(id);
+                onSessionSelect && onSessionSelect(id);
+              }
+            }}
+            onNewChat={() => {
+              if (currentWindow === 'learn') {
+                setPendingNewChat(true);
+                setCurrentWindow('chat');
+              } else {
+                setSelectedSession(null);
+              }
+            }}
+            onProfileUpdate={() => {}}
+            theme="light"
+            isLoadingSessions={false}
+          />
+        )}
+        <button onClick={() => setCurrentWindow('learn')}>Switch to Learn</button>
+        <button onClick={() => setCurrentWindow('chat')}>Switch to Chat</button>
+        <div data-testid="current-window">{currentWindow}</div>
+        <div data-testid="selected-session">{selectedSession}</div>
+      </>
+    );
+  }
+
+  it('renders Sidebar in chat window', () => {
+    render(<SidebarWithWindow initialWindow="chat" />);
+    expect(screen.getByText('Budgeting')).toBeInTheDocument();
+    expect(screen.getByText('Investing')).toBeInTheDocument();
+  });
+
+  it('renders Sidebar in learn window', () => {
+    render(<SidebarWithWindow initialWindow="learn" />);
+    expect(screen.getByText('Budgeting')).toBeInTheDocument();
+    expect(screen.getByText('Investing')).toBeInTheDocument();
+  });
+
+  it('clicking a session in learn window switches to chat and selects the session', async () => {
+    const onSessionSelect = vi.fn();
+    render(<SidebarWithWindow initialWindow="learn" onSessionSelect={onSessionSelect} />);
+    expect(screen.getByTestId('current-window').textContent).toBe('learn');
+    const sessionItem = screen.getByText('Budgeting');
+    fireEvent.click(sessionItem);
+    // Wait for next tick
+    await waitFor(() => {
+      expect(screen.getByTestId('current-window').textContent).toBe('chat');
+      expect(screen.getByTestId('selected-session').textContent).toBe('sess1');
+      expect(onSessionSelect).toHaveBeenCalledWith('sess1');
+    });
+  });
+
+  it('clicking New Chat in learn window switches to chat and opens a clean chat window', async () => {
+    render(<SidebarWithWindow initialWindow="learn" />);
+    expect(screen.getByTestId('current-window').textContent).toBe('learn');
+    const newChatBtn = screen.getByText('New Chat');
+    fireEvent.click(newChatBtn);
+    await waitFor(() => {
+      expect(screen.getByTestId('current-window').textContent).toBe('chat');
+      expect(screen.getByTestId('selected-session').textContent).toBe('');
+    });
+  });
+}); 
